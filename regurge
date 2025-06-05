@@ -1,0 +1,221 @@
+#!/usr/bin/nodejs
+
+/**
+ * @fileoverview Node.js script for chat with Google Vertex AI Gemini API,
+ *               providing an interactive and JSON-based interface.
+ *
+ * Copyright (c) 2025, Stephen R. van den Berg <srb@cuci.nl, The Netherlands
+ * Released into the wild under the GPL3 license.
+ */
+
+var modelName = "gemini-2.5-flash-lite";
+
+var project = process.env.VERTEXAI_PROJECT;
+var location = process.env.VERTEXAI_LOCATION;
+
+const readline = require("readline");
+const { VertexAI } = require("@google-cloud/vertexai");
+
+function showusage(msg) {
+  console.error(msg);
+  process.exit(64);
+}
+
+for (let i = 0; i < process.argv.length; i++) {
+  if (i + 1 < process.argv.length) {
+    if (process.argv[i] === "-P")
+      project = process.argv[++i];
+    else if (process.argv[i] === "-L")
+      location = process.argv[++i];
+    else if (process.argv[i] === "-M")
+      modelName = process.argv[++i];
+  }
+}
+
+if (!project || !location) {
+  showusage(
+    "Error: Please set VERTEXAI_PROJECT and VERTEXAI_LOCATION " +
+      "environment variables or provide them as flags."
+  );
+}
+
+const vertex_ai = new VertexAI({ project, location });
+
+const model = vertex_ai.getGenerativeModel({
+  model: modelName,
+  generationConfig: {
+    // To curtail unforeseen cost-explosion.
+    //maxOutputTokens: 131072,
+
+    // The following settings make the model's responses deterministic.
+    temperature: 0.0,
+    topP: 1.0,
+    topK: 1.0,
+    seed: 0,
+
+    // Style points, keep it neutral: do not enforce.
+    frequencyPenalty: 0.0, // -2.0 .. 2.0
+    presencePenalty: 0.0,  // -2.0 .. 2.0
+  },
+  safetySettings: [
+    // Uncensored
+    { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+  ],
+});
+
+/**
+ * Calls the Vertex AI Gemini model with the provided conversation contents.
+ * The model implicitly handles caching of common prefixes in the conversation.
+ * This function does NOT manage chat history; it only performs the API call.
+ * @param {Array<Object>} contents The conversation history or messages to send
+ *                                 to the model. Each object should have
+ *                                 "role" and "parts".
+ *                                 (e.g., { "role": "user",
+ *                                          "parts": [{ "text": "..." }] })
+ * @returns {Promise<string>} The full text response from the model.
+ */
+async function sendtoLLM(contents) {
+  if (!contents.length) {
+    console.error(
+      "Error: Contents for Gemini API must be a non-empty array."
+    );
+      // In JSON mode, this would be a fatal error. In interactive, it might
+     //  just skip.
+    //   For now, let's make it fatal for consistency.
+    process.exit(1);
+  }
+
+  try {
+    const request = {
+      contents: contents,
+    };
+
+    const streamingResult = await model.generateContentStream(request);
+    let fullResponse = [];
+    for await (const chunk of streamingResult.stream)
+      fullResponse.push(chunk.candidates[0]?.content?.parts[0]);
+
+    const aggregatedResponse = await streamingResult.response;
+    if (aggregatedResponse.usageMetadata && isVerboseMode)
+      console.error("\nUsage Metadata:", aggregatedResponse.usageMetadata);
+    contents.push({ "role": "model",
+                    "parts": fullResponse });
+    fullResponse.push({"usageMetadata":
+                 JSON.stringify(aggregatedResponse.usageMetadata, null, 2)});
+    return fullResponse;
+  } catch (error) {
+    console.error("Error calling Vertex AI Gemini API:", error);
+    if (error.details)
+      console.error("Error details:", error.details);
+    throw error;
+  }
+}
+
+// Global chat history.
+let chatHistory = [];
+
+async function sendMessageInteractive(message) {
+  chatHistory.push({ "role": "user", "parts": [{ "text": message }] });
+
+  try {
+     // Call the API with the full current chat history.
+    //  Let the model implicitly handle caching of common prefixes.
+    const modelResponse = await sendtoLLM(chatHistory);
+    for (const part of modelResponse) {
+      if (part.text != null)
+        process.stdout.write(part.text);
+    }
+  } catch (error) {
+     // If an error occurs, remove the last user message
+    //  to avoid a broken turn in history.
+    chatHistory.pop();
+  }
+}
+
+const isVerboseMode = process.argv.includes("-v");
+const isJsonMode = process.argv.includes("-j");
+
+async function startChat() { // Read all data from stdin
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: !isJsonMode, // Only use terminal features (like prompt)
+                           // in interactive mode
+  });
+
+  if (process.argv.includes("-h")) {
+    showusage(`Usage: regurge [-j] [-v] [-P project] [-L location] [-M model]
+\t-j\tJSON input
+\t-P\tVertexAI-project (environment VERTEXAI_PROJECT)
+\t-L\tVertexAI-location (environment VERTEXAI_LOCATION)
+\t-M\tVertexAI-model (default: ` + modelName + `)
+\t-v\tVerbose LLM output`);
+  }
+
+  if (isJsonMode) {
+      // JSON Mode: Expect JSON objects on stdin.  Arrays replace history.
+     //  Objects append to history.
+    let jsonChatHistory = [];
+    let previouslines = "";
+
+     // FIXME This line based parsing breaks down if multiple separate
+    //  JSON objects are given on a single line of input.
+    rl.on("line", async (line) => { // Process each line as a potential
+      try {                        //  JSON object
+        const parsedInput = JSON.parse(previouslines + line);
+	previouslines = "";	 // Clear parsing history
+
+         // If input is an array, assume it's the initial full
+	//  conversation history.
+        if (Array.isArray(parsedInput))
+          jsonChatHistory = parsedInput;
+        else if (parsedInput && typeof parsedInput === "object") {
+          // Otherwise, assume it's a single message object to append.
+          jsonChatHistory.push(parsedInput);
+        } else {
+          console.error(
+            "Error: Invalid JSON input. Expected an object or an array " +
+            "for initial history."
+          );
+          return; // Skip processing this line
+        }
+
+         // Send the entire accumulated history to the LLM
+        //  Let the model implicitly handle caching of common prefixes.
+        let fullResponse;
+	try {
+          fullResponse = await sendtoLLM(jsonChatHistory);
+	} catch (error) {
+          console.error("Connection to LLM died.");
+          process.exit(2);
+	}
+	//  Just send back the model's response
+        process.stdout.write(JSON.stringify(fullResponse) + "\n");
+      } catch (error) {
+	previouslines += line;
+        // Continue waiting for more input even if one line fails
+      }
+    });
+
+    rl.on("close", () => { // stdin closed, exit
+      console.error("JSON input stream ended. Exiting.");
+      process.exit(0);
+    });
+  } else {
+    // Interactive Mode: Use readline for continuous input with prompt.
+    rl.prompt();                     // Show initial prompt
+    rl.on("line", async (line) => { //  Process each line as user input
+      await sendMessageInteractive(line.trim());
+      rl.prompt();                //    Show prompt again for next input
+    }).on("close", () => {       //     stdin closed, exit
+      console.error("Interactive chat ended. Exiting.");
+      process.exit(0);
+    });
+  }
+}
+
+// Start the chat application.
+startChat();
