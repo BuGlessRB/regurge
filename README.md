@@ -12,6 +12,8 @@ regurge has the following features:
 regurge.vim supports:
 - Multiple conversations (one per buffer).
 - Fully editable history, to mold the scope the LLM sees.
+- Full power of vim available to copy/paste from/into LLM conversations.
+- No pesky delimiters which cloud the answers.
 - Colour-coded conversation view.
 - Foldable conversation view.
 - Automatic caching of past history (lowers cost).
