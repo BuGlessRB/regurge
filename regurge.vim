@@ -16,9 +16,31 @@ vim9script
 # FIXME Whenever you undo, then redo a model response, the folds will not come
 # back.  This cannot easily be fixed, since Vim does not restore manual folds
 # at the moment.
+#
+# Optional buffer or global variables which can be configured from
+# within .vimrc:
+#
+# regurge_sendkey
+# regurge_model
+# regurge_project
+# regurge_location
+
+final helpercmd: list<string> = ["regurge", "-j"]
+
+def Add_flags(flag: string, varname: string)
+  const gval: string = get(b:, varname, get(g:, varname, ""))
+  if !empty(gval)
+    extend(helpercmd, [flag, gval])
+  endif
+enddef
 
 def Regurge()
-  var leader_hotkey = "s"   # \s to send to LLM
+  # Default is: \s to send to LLM
+  var leader_sendkey: string = get(g:, "regurge_sendkey", "s")
+
+  Add_flags("-P", "regurge_project")  # Default via environment (see regurge)
+  Add_flags("-L", "regurge_location") # Default via environment (see regurge)
+  Add_flags("-M", "regurge_model")    # Default set in regurge
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
@@ -56,7 +78,7 @@ def Regurge()
   normal! G
   # Define a normal mode mapping to send the message
   execute "nnoremap <buffer> <silent> <Leader>" ..
-           leader_hotkey .. " <cmd>call <SID>SendtoLLM()<CR>"
+           leader_sendkey .. " <cmd>call <SID>SendtoLLM()<CR>"
 
   # Buffer-local list to store match IDs for dynamic highlighting.
   b:regurge_fold_match_ids = []
@@ -69,10 +91,11 @@ enddef
 def Start_helperprocess(ourbuf: number): number
   var job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) != "run"
-    Stop_helperprocess(ourbuf)       # Just in case
+    if job_status(job_obj) == "dead"
+      echomsg "regurge process [" .. ourbuf .. "] died, restarting it..."
+    endif
     # Start the regurge process in JSON mode
-    var cmd: list<string> = ["regurge", "-j"]
-    job_obj = job_start(cmd, {
+    job_obj = job_start(helpercmd, {
      "in_io": "pipe",
      "out_io": "pipe",
      "callback": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
@@ -89,13 +112,15 @@ def Hourglass(ourbuf: number, timer_id: number): void
   if !bufexists(ourbuf)
     timer_stop(timer_id)
   endif
-  var start_time: any = getbufvar(ourbuf, "start_time")
+  const start_time: any = getbufvar(ourbuf, "start_time")
   if bufnr("%") == ourbuf
     redraw | echo "Waiting for LLM... " ..
                   printf("%.0f", reltimefloat(reltime(start_time))) .. "s"
   endif
 enddef
 
+# FIXME The fold-level-dependent highlighting has window scope, so it needs
+# to be toggled on and off, depending on the buffer being in view
 def Hide_foldcolours(): void
   for id in b:regurge_fold_match_ids
     matchdelete(id)
@@ -107,16 +132,15 @@ enddef
 def Show_foldcolours(): void
   Hide_foldcolours()
 
-  var linesperlevel: list<list<number>> = [[], [], []]
+  final linesperlevel: list<list<number>> = [[], [], []]
 
   def ColourFold(group: string, level: number)
-    var lines: list<number> = linesperlevel[level]
+    const lines: list<number> = linesperlevel[level]
     if (!empty(lines))
       add(b:regurge_fold_match_ids, matchaddpos(group, lines))
     endif
   enddef
 
-  var lfirst: number = getcurpos()[1] - winline()
   for lnum in range(line("w0"), line("w$"))
     add(linesperlevel[min([foldlevel(lnum), 2])], lnum)
   endfor
@@ -138,7 +162,7 @@ def AutoSend(): void
   if b:old_showmode
     setlocal showmode
   endif
-  var curline: number = line('.')
+  const curline: number = line('.')
   if curline == line("$") && col(".") + 1 == col("$") &&
      foldlevel(curline) == 0 && !empty(getline(curline))
     SendtoLLM()
@@ -189,7 +213,7 @@ def SendtoLLM(): void
   enddef
 
   for lnum in range(1, line("$"))
-    var flevel: number = foldlevel(lnum)
+    const flevel: number = foldlevel(lnum)
     if flevel == 0
       Flushparts("user", lnum)
     elseif flevel == 1
@@ -225,17 +249,17 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
 
   setlocal modifiable
 
-  var start_line: number = line("$") + 1
+  const start_line: number = line("$") + 1
   if (!empty(metadata))
     metadata[0] = "{ \"ResponseTime\": " ..
      printf("%.0f", reltimefloat(reltime(b:start_time)) * 1000) .. ","
   endif
   append(line("$"), metadata)
-  var end_meta_line: number = line("$")
+  const end_meta_line: number = line("$")
   append(line("$"), response)
-  var end_line: number = line("$")
+  const end_line: number = line("$")
 
-  var cmdprefix = ":" .. start_line
+  const cmdprefix: string = ":" .. start_line
 
   def Dofoldop(cmdtail: string): void
     execute cmdprefix .. cmdtail
@@ -269,7 +293,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
     return
   endif
 
-  var fullmsg: string = getbufvar(ourbuf, "partial_msg", "") .. msg
+  const fullmsg: string = getbufvar(ourbuf, "partial_msg", "") .. msg
   var json_parts: list<any>
 
   try
@@ -298,9 +322,9 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   endfor
   model_response_text = split(join(model_response_text, ""), "\n", 1)
 
-  var original_bufnr: number = bufnr("%")
-  var original_lnum: number = line(".")
-  var original_col: number = col(".")
+  const original_bufnr: number = bufnr("%")
+  const original_lnum: number = line(".")
+  const original_col: number = col(".")
 
   try
     # Switch to the target buffer to perform updates.
@@ -322,7 +346,7 @@ enddef
 
 # Function to stop the regurge helper process
 def Stop_helperprocess(ourbuf: number)
-  var job_obj: job = getbufvar(ourbuf, "job_obj")
+  const job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) == "run"
     job_stop(job_obj)
   endif
