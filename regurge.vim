@@ -22,11 +22,15 @@ vim9script
 #
 # Optional buffer or global variables which can be configured from
 # within .vimrc:
-#
 # regurge_sendkey
 # regurge_model
 # regurge_project
 # regurge_location
+#
+# Colour profiles used:
+# RegurgeUser
+# RegurgeModel
+# RegurgeMeta
 
 
 def Regurge()
