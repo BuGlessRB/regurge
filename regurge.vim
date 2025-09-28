@@ -28,19 +28,20 @@ vim9script
 # regurge_project
 # regurge_location
 
-final helpercmd: list<string> = ["regurge", "-j"]
-
-def Add_flags(flag: string, varname: string)
-  const gval: string = get(b:, varname, get(g:, varname, ""))
-  if !empty(gval)
-    extend(helpercmd, [flag, gval])
-  endif
-enddef
 
 def Regurge()
+  enew
   # Default is: \s to send to LLM
-  var leader_sendkey: string = get(g:, "regurge_sendkey", "s")
+  var leader_sendkey: string = get(b:, "regurge_sendkey",
+                                   get(g:, "regurge_sendkey", "s"))
 
+  b:helpercmd = ["regurge", "-j"]
+  def Add_flags(flag: string, varname: string)
+    const gval: string = get(b:, varname, get(g:, varname, ""))
+    if !empty(gval)
+      extend(b:helpercmd, [flag, gval])
+    endif
+  enddef
   Add_flags("-P", "regurge_project")  # Default via environment (see regurge)
   Add_flags("-L", "regurge_location") # Default via environment (see regurge)
   Add_flags("-M", "regurge_model")    # Default set in regurge
@@ -51,7 +52,6 @@ def Regurge()
   hi default RegurgeModel ctermbg=NONE guibg=NONE
   hi default RegurgeMeta ctermfg=Cyan guifg=Cyan
 
-  enew
   setlocal noswapfile
   setlocal noundofile
   setlocal wrap
@@ -98,7 +98,7 @@ def Start_helperprocess(ourbuf: number): number
       echomsg "regurge process [" .. ourbuf .. "] died, restarting it..."
     endif
     # Start the regurge process in JSON mode
-    job_obj = job_start(helpercmd, {
+    job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
      "in_io": "pipe",
      "out_io": "pipe",
      "callback": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),

@@ -66,6 +66,9 @@ const model = vertex_ai.getGenerativeModel({
   ],
 });
 
+const isVerboseMode = process.argv.includes("-v");
+const isJsonMode = process.argv.includes("-j");
+
 /**
  * Calls the Vertex AI Gemini model with the provided conversation contents.
  * The model implicitly handles caching of common prefixes in the conversation.
@@ -75,7 +78,7 @@ const model = vertex_ai.getGenerativeModel({
  *                                 "role" and "parts".
  *                                 (e.g., { "role": "user",
  *                                          "parts": [{ "text": "..." }] })
- * @returns {Promise<string>} The full text response from the model.
+ * @returns {Promise<Array<Object>>} The full text response from the model.
  */
 async function sendtoLLM(contents) {
   if (!contents.length) {
@@ -134,9 +137,6 @@ async function sendMessageInteractive(message) {
     chatHistory.pop();
   }
 }
-
-const isVerboseMode = process.argv.includes("-v");
-const isJsonMode = process.argv.includes("-j");
 
 async function startChat() { // Read all data from stdin
   const rl = readline.createInterface({
