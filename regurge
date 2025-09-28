@@ -1,12 +1,12 @@
 #!/usr/bin/nodejs
 
-/**
- * @fileoverview Node.js script for chat with Google Vertex AI Gemini API,
- *               providing an interactive and JSON-based interface.
- *
- * Copyright (c) 2025, Stephen R. van den Berg <srb@cuci.nl, The Netherlands
- * Released into the wild under the GPL3 license.
- */
+    /** @license
+    ** regurge: Node.js script for chat with Google Vertex AI Gemini API,
+   **                  providing an interactive and JSON-based interface.
+  ** Copyright (c) 2025 by Stephen R. van den Berg <srb@cuci.nl>
+ ** License: ISC OR GPL-3.0
+** Sponsored by: Cubic Circle, The Netherlands
+*/
 
 var modelName = "gemini-2.5-flash-lite";
 

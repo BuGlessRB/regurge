@@ -1,18 +1,21 @@
 vim9script
 
-# Opens up a conversation buffer with an LLM through the regurge cmdline tool.
-#
+     # @license
+    # regurge.vim: Opens up a conversation buffer with an LLM through
+   #               the regurge cmdline tool.
+  # Copyright (c) 2025 by Stephen R. van den Berg <srb@cuci.nl>
+ # License: ISC OR GPL-3.0
+# Sponsored by: Cubic Circle, The Netherlands
+
 # Start using :R or :Regurge, then send using \s
 # It starts in insert mode.  When you leave insert mode it autosends.
 # Pressing enter jumps you down, into insert mode.
 # zo opens a fold
 # zc closes a fold
 #
-# Copyright (c) 2025, Stephen R. van den Berg <srb@cuci.nl>, The Netherlands
-# Released into the wild under the GPL3 open source license.
-#
 # It uses folds to hide meta information and to separate user and model
 # responses.
+#
 # FIXME Whenever you undo, then redo a model response, the folds will not come
 # back.  This cannot easily be fixed, since Vim does not restore manual folds
 # at the moment.
