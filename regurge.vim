@@ -42,8 +42,8 @@ const default_model: string = "gemini-2.5-flash-lite"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
- Respond briefly, succinctly, bluntly, and directly.
- No politeness, compliments, apologies, or expressions of feeling.
+ Be brief, succinct, blunt and direct.
+ No politeness, compliments or apologies.
  Articulate doubt if unsure.
 HERE
 
