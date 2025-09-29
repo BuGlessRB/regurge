@@ -211,8 +211,12 @@ async function startChat() { // Read all data from stdin
 	//  conversation history.
         if (Array.isArray(parsedInput)) {
 	  // Convert an initial model role into system instructions
-	  if (parsedInput.length && parsedInput[0].role === "model")
-	    systeminstruction = parsedInput.shift().parts;
+	  if (parsedInput.length && parsedInput[0].role === "model") {
+	    // FIXME This should have worked, but it does not
+	    //systeminstruction = parsedInput.shift().parts;
+	    // So we use this as a workaround
+            parsedInput[0].role = "user";
+	  }
           jsonChatHistory = parsedInput;
 	} else if (parsedInput && typeof parsedInput === "object") {
           // Otherwise, assume it's a single message object to append.

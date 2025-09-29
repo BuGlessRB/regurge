@@ -45,7 +45,7 @@ const default_systeminstruction: list<string> =<< trim HERE
   Respond briefly, succinctly, bluntly, and directly.
   No politeness, compliments, apologies, or expressions of feeling.
   Articulate doubt if unsure.
-  Assume plain text by default.
+  Do not use Markdown by default.
 HERE
 
 var system_personas: dict<dict<any>> = {
@@ -90,7 +90,7 @@ def Regurge(requested_persona: string = extname)
     endif
   enddef
 
-  b:helpercmd = ["./regurge", "-j"]
+  b:helpercmd = ["regurge", "-j"]
   Add_flags("-M", "model")    # Default set in regurge
   Add_flags("-L", "location") # Default via environment (see regurge)
   Add_flags("-P", "project")  # Default via environment (see regurge)
