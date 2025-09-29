@@ -43,7 +43,7 @@ const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
  Respond briefly, succinctly, bluntly, and directly.
- No name-prefix, politeness, compliments, apologies, or expressions of feeling.
+ No politeness, compliments, apologies, or expressions of feeling.
  Articulate doubt if unsure.
 HERE
 

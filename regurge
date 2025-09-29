@@ -58,19 +58,13 @@ const modelconfig = {
       // }
     // }
   },
-  tools: {
-    googleSearch: {
-      excludeDomains: []
-    },
-    googleMaps: {
-      enableWidget: true
-    },
-    enterpriseWebSearch: {
-      excludeDomains: []
-    },
-    codeExecution: {},
-    urlContext: {},
-  },
+  tools: [
+    { googleSearch: { excludeDomains: [] } },
+    //{ googleMaps: { enableWidget: true } },
+    //{ enterpriseWebSearch: { excludeDomains: [] } },
+    //{ codeExecution: {} },
+    //{ urlContext: {} },
+  ],
   toolConfig: {
     retrievalConfig: {
       languageCode: "en"
