@@ -382,7 +382,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   endfor
   model_response_text = split(join(model_response_text, ""), "\n", 1)
 
-  const original_bufnr: number = bufnr("%")
+  const original_buf: number = bufnr("%")
 
   if ourbuf == original_buf
     UpdateBuffer(model_response_text, model_metadata, true)
@@ -396,7 +396,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
       UpdateBuffer(model_response_text, model_metadata, false)
     finally
       # Always try to return to the buffer the user was in
-      execute noa_b .. original_bufnr
+      execute noa_b .. original_buf
       cursor(original_lnum, original_col)
     endtry
   endif
