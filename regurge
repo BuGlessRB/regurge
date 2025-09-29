@@ -8,7 +8,7 @@
 ** Sponsored by: Cubic Circle, The Netherlands
 */
 
-var modelName = "gemini-2.5-flash-lite";
+var modelname = "gemini-2.5-flash-lite";
 
 var project = process.env.VERTEXAI_PROJECT;
 var location = process.env.VERTEXAI_LOCATION;
@@ -28,7 +28,7 @@ for (let i = 0; i < process.argv.length; i++) {
     else if (process.argv[i] === "-L")
       location = process.argv[++i];
     else if (process.argv[i] === "-M")
-      modelName = process.argv[++i];
+      modelname = process.argv[++i];
   }
 }
 
@@ -42,10 +42,15 @@ if (!project || !location) {
 const vertex_ai = new VertexAI({ project, location });
 
 const model = vertex_ai.getGenerativeModel({
-  model: modelName,
+  model: modelname,
   generationConfig: {
     // To curtail unforeseen cost-explosion.
     //maxOutputTokens: 131072,
+
+    // responseMimeType: "application/json",
+    responseModalities: ["TEXT",
+                        // "IMAGE","AUDIO",
+                        ],
 
     // The following settings make the model's responses deterministic.
     temperature: 0.0,
@@ -56,13 +61,36 @@ const model = vertex_ai.getGenerativeModel({
     // Style points, keep it neutral: do not enforce.
     frequencyPenalty: 0.0, // -2.0 .. 2.0
     presencePenalty: 0.0,  // -2.0 .. 2.0
+    enableAffectiveDialog: false,
+
+    // Probabilities
+    // response_logprobs: true,
+    // logprobs: 4,  // Show the four runners up alternative probs
+
+    // routingConfig: {
+    //   manualMode: {
+    //     modelName: modelname,
+    //   }
+      // autoMode: {
+      //   modelRoutingPreference: "UNKNOWN"
+      //   modelRoutingPreference: "PRIORITIZE_QUALITY"
+      //   modelRoutingPreference: "BALANCED"
+      //   modelRoutingPreference: "PRIORITIZE_COST"
+      // }
+    // }
   },
   safetySettings: [
     // Uncensored
-    { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_UNSPECIFIED",		  threshold: "OFF" },
+    { category: "HARM_CATEGORY_HATE_SPEECH",		  threshold: "OFF" },
+    { category: "HARM_CATEGORY_DANGEROUS_CONTENT",	  threshold: "OFF" },
+    { category: "HARM_CATEGORY_HARASSMENT",		  threshold: "OFF" },
+    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",	  threshold: "OFF" },
+    { category: "HARM_CATEGORY_CIVIC_INTEGRITY",	  threshold: "OFF" },
+    { category: "HARM_CATEGORY_IMAGE_HATE",		  threshold: "OFF" },
+    { category: "HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT",  threshold: "OFF" },
+    { category: "HARM_CATEGORY_IMAGE_HARASSMENT",	  threshold: "OFF" },
+    { category: "HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT",  threshold: "OFF" },
   ],
 });
 
@@ -80,7 +108,7 @@ const isJsonMode = process.argv.includes("-j");
  *                                          "parts": [{ "text": "..." }] })
  * @returns {Promise<Array<Object>>} The full text response from the model.
  */
-async function sendtoLLM(contents) {
+async function sendtoLLM(systeminstruction, contents) {
   if (!contents.length) {
     console.error(
       "Error: Contents for Gemini API must be a non-empty array."
@@ -96,6 +124,9 @@ async function sendtoLLM(contents) {
       contents: contents,
     };
 
+    if (systeminstruction.length)
+      request.system_instruction = { parts: systeminstruction }
+
     const streamingResult = await model.generateContentStream(request);
     let fullResponse = [];
     for await (const chunk of streamingResult.stream)
@@ -106,8 +137,10 @@ async function sendtoLLM(contents) {
       console.error("\nUsage Metadata:", aggregatedResponse.usageMetadata);
     contents.push({ "role": "model",
                     "parts": fullResponse });
-    fullResponse.push({"usageMetadata":
+    if (isJsonMode) {
+      fullResponse.push({"usageMetadata":
                  JSON.stringify(aggregatedResponse.usageMetadata, null, 2)});
+    }
     return fullResponse;
   } catch (error) {
     console.error("Error calling Vertex AI Gemini API:", error);
@@ -126,7 +159,7 @@ async function sendMessageInteractive(message) {
   try {
      // Call the API with the full current chat history.
     //  Let the model implicitly handle caching of common prefixes.
-    const modelResponse = await sendtoLLM(chatHistory);
+    const modelResponse = await sendtoLLM([], chatHistory);
     for (const part of modelResponse) {
       if (part.text != null)
         process.stdout.write(part.text);
@@ -151,7 +184,7 @@ async function startChat() { // Read all data from stdin
 \t-j\tJSON input
 \t-P\tVertexAI-project (environment VERTEXAI_PROJECT)
 \t-L\tVertexAI-location (environment VERTEXAI_LOCATION)
-\t-M\tVertexAI-model (default: ` + modelName + `)
+\t-M\tVertexAI-model (default: ` + modelname + `)
 \t-v\tVerbose LLM output`);
   }
 
@@ -159,6 +192,7 @@ async function startChat() { // Read all data from stdin
       // JSON Mode: Expect JSON objects on stdin.  Arrays replace history.
      //  Objects append to history.
     let jsonChatHistory = [];
+    let systeminstruction = [];
     let previouslines = "";
 
      // FIXME This line based parsing breaks down if multiple separate
@@ -170,9 +204,12 @@ async function startChat() { // Read all data from stdin
 
          // If input is an array, assume it's the initial full
 	//  conversation history.
-        if (Array.isArray(parsedInput))
+        if (Array.isArray(parsedInput)) {
+	  // Convert an initial model role into system instructions
+	  if (parsedInput.length && parsedInput[0].role === "model")
+	    systeminstruction = parsedInput.shift().parts;
           jsonChatHistory = parsedInput;
-        else if (parsedInput && typeof parsedInput === "object") {
+	} else if (parsedInput && typeof parsedInput === "object") {
           // Otherwise, assume it's a single message object to append.
           jsonChatHistory.push(parsedInput);
         } else {
@@ -187,7 +224,7 @@ async function startChat() { // Read all data from stdin
         //  Let the model implicitly handle caching of common prefixes.
         let fullResponse;
 	try {
-          fullResponse = await sendtoLLM(jsonChatHistory);
+          fullResponse = await sendtoLLM(systeminstruction, jsonChatHistory);
 	} catch (error) {
           console.error("Connection to LLM died.");
           process.exit(2);

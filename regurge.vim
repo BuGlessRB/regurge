@@ -26,29 +26,41 @@ vim9script
 # regurge_model
 # regurge_project
 # regurge_location
+# regurge_name
+# regurge_systeminstruction
 #
 # Colour profiles used:
 # RegurgeUser
 # RegurgeModel
 # RegurgeMeta
 
+const gvarprefix: string = "regurge_"
+
+def Getbgvar(tailname: string, def: any): any
+  const gvarname: string = gvarprefix .. tailname
+  return get(b:, gvarname, get(g:, gvarname, def))
+enddef
 
 def Regurge()
   enew
   # Default is: \s to send to LLM
-  var leader_sendkey: string = get(b:, "regurge_sendkey",
-                                   get(g:, "regurge_sendkey", "s"))
+  const leader_sendkey: string = Getbgvar("sendkey", "s")
+  const name: string = Getbgvar("name", "Regurge")
+  const systeminstruction: string = Getbgvar("systeminstruction",
+   "You are called " .. name .. ".  All responses should be brief" ..
+   ", succinct, blunt, direct, void of any politeness or complimenents or" ..
+   " expression of feelings.")
 
   b:helpercmd = ["regurge", "-j"]
   def Add_flags(flag: string, varname: string)
-    const gval: string = get(b:, varname, get(g:, varname, ""))
+    const gval: string = Getbgvar(varname, "")
     if !empty(gval)
       extend(b:helpercmd, [flag, gval])
     endif
   enddef
-  Add_flags("-P", "regurge_project")  # Default via environment (see regurge)
-  Add_flags("-L", "regurge_location") # Default via environment (see regurge)
-  Add_flags("-M", "regurge_model")    # Default set in regurge
+  Add_flags("-P", "project")  # Default via environment (see regurge)
+  Add_flags("-L", "location") # Default via environment (see regurge)
+  Add_flags("-M", "model")    # Default set in regurge
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
@@ -66,9 +78,15 @@ def Regurge()
   setlocal indentexpr=
   setlocal filetype=regurgechat
   setlocal buftype=nofile
-  execute "file [Regurge Chat " .. bufnr("%") .. "]"
+  execute "file [" .. name .. " " .. bufnr("%") .. "]"
   setlocal nomodified
   setlocal modifiable
+
+  append(0, systeminstruction)
+  execute ":1,$-1fold"
+  execute ":1foldclose"
+  # Move cursor to the end of the buffer
+  normal! G
 
   b:job_obj = null_job      # Init it, in case the buffer is wiped right away
   # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
@@ -81,8 +99,6 @@ def Regurge()
   autocmd BufLeave <buffer> Hide_foldcolours()
   autocmd InsertEnter <buffer> UnsetMagicEnter()
   autocmd InsertLeave <buffer> AutoSend()
-  # Move cursor to the end of the buffer
-  normal! G
   # Define a normal mode mapping to send the message
   execute "nnoremap <buffer> <silent> <Leader>" ..
            leader_sendkey .. " <cmd>call <SID>SendtoLLM()<CR>"
