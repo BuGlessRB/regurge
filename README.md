@@ -17,6 +17,8 @@ regurge.vim supports:
 - Colour-coded conversation view.
 - Foldable conversation view.
 - Automatic caching of past history (lowers cost).
+- Supports naming the process.
+- Supports providing/altering system instructions in the first fold.
 
 ## Requirements
 

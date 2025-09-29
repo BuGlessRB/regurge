@@ -22,10 +22,12 @@ vim9script
 #
 # Optional buffer or global variables which can be configured from
 # within .vimrc:
+#
 # regurge_sendkey
 # regurge_model
 # regurge_project
 # regurge_location
+#
 # regurge_name
 # regurge_systeminstruction
 #
@@ -49,7 +51,7 @@ def Regurge()
   const systeminstruction: string = Getbgvar("systeminstruction",
    "You are called " .. name .. ".  All responses should be brief" ..
    ", succinct, blunt, direct, void of any politeness or complimenents or" ..
-   " expression of feelings.")
+   " or apologies or expression of feelings.")
 
   b:helpercmd = ["regurge", "-j"]
   def Add_flags(flag: string, varname: string)
