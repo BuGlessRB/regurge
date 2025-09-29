@@ -58,6 +58,24 @@ const modelconfig = {
       // }
     // }
   },
+  tools: {
+    googleSearch: {
+      excludeDomains: []
+    },
+    googleMaps: {
+      enableWidget: true
+    },
+    enterpriseWebSearch: {
+      excludeDomains: []
+    },
+    codeExecution: {},
+    urlContext: {},
+  },
+  toolConfig: {
+    retrievalConfig: {
+      languageCode: "en"
+    }
+  },
   safetySettings: [
     // Uncensored
     { category: "HARM_CATEGORY_UNSPECIFIED",		  threshold: "OFF" },
@@ -74,7 +92,7 @@ const modelconfig = {
 };
 
 var runmodel;	// The currently running model connection
-var lastinstructions = "";
+var lastinstruction = "";
 
 function showusage(msg) {
   console.error(msg);
@@ -131,13 +149,14 @@ async function sendtoLLM(systeminstruction, contents) {
       contents: contents,
     };
 
-    var newinstruction = JSON.stringify(systeminstruction);
-    if (systeminstruction.length)
-      modelconfig.system_instruction = { parts: systeminstruction }
-    else
-      delete(modelconfig, "system_instruction");
+    const newinstruction = JSON.stringify(systeminstruction);
 
     if (newinstruction != lastinstruction) {
+      const s_i = "systemInstruction";
+      if (systeminstruction.length)
+        modelconfig[s_i] = { parts: systeminstruction }
+      else
+        delete(modelconfig, s_i);
       runmodel = vertex_ai.getGenerativeModel(modelconfig);
       lastinstruction = newinstruction;
     }
