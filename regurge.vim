@@ -28,7 +28,8 @@ vim9script
 # regurge_project
 # regurge_location
 #
-# regurge_name
+# regurge_personas
+# regurge_persona
 # regurge_systeminstruction
 #
 # Colour profiles used:
@@ -37,32 +38,68 @@ vim9script
 # RegurgeMeta
 
 const gvarprefix: string = "regurge_"
+const extname: string = "Regurge"
+const default_systeminstruction: list<string> =<< trim HERE
+  Respond briefly, succinctly, bluntly, and directly.
+  No politeness, compliments, apologies, or expressions of feeling.
+  Articulate doubt if unsure.
+HERE
+
+b:regurge_model = "gemini-flash-lite-latest"  # Default override
+b:regurge_model = "gemini-flash-latest"  # Default override
+
+var system_personas: dict<dict<any>> = {
+  [extname]:
+  { "systeminstruction": default_systeminstruction,
+    "model": "",      # Override model if non-empty
+    "project": "",    # Override project if non-empty
+    "location": "",   # Override location if non-empty
+  },
+}
 
 def Getbgvar(tailname: string, def: any): any
   const gvarname: string = gvarprefix .. tailname
   return get(b:, gvarname, get(g:, gvarname, def))
 enddef
 
-def Regurge()
+def Regurge(requested_persona: string = extname)
   enew
   # Default is: \s to send to LLM
   const leader_sendkey: string = Getbgvar("sendkey", "s")
-  const name: string = Getbgvar("name", "Regurge")
-  const systeminstruction: string = Getbgvar("systeminstruction",
-   "You are called " .. name .. ".  All responses should be brief" ..
-   ", succinct, blunt, direct, void of any politeness or complimenents or" ..
-   " or apologies or expression of feelings.")
+  const persona: string = empty(requested_persona) ?
+                           Getbgvar("persona", extname) : requested_persona
+  const personas: dict<dict<string>> = Getbgvar("personas", {})
+  const profile: dict<any> =
+      has_key(personas, persona) ? personas[persona]
+    : has_key(system_personas, persona) ? system_personas[persona]
+    : { "systeminstruction": Getbgvar("systeminstruction",
+                              system_personas[extname].systeminstruction)}
 
-  b:helpercmd = ["regurge", "-j"]
+  const systeminstruction: list<string> = extend([
+    "From this point forward, you are to refer to yourself as '" .. persona ..
+    "' in all your responses.",
+    "Do not use the name 'Bard' or any other name.",
+    "Always identify yourself as '" .. persona ..  "'."
+  ], profile.systeminstruction)
+
   def Add_flags(flag: string, varname: string)
-    const gval: string = Getbgvar(varname, "")
+    const gval: string =
+      has_key(profile, varname) && !empty(profile[varname]) ?
+       profile[varname] : Getbgvar(varname, "")
     if !empty(gval)
       extend(b:helpercmd, [flag, gval])
     endif
   enddef
-  Add_flags("-P", "project")  # Default via environment (see regurge)
-  Add_flags("-L", "location") # Default via environment (see regurge)
+
+  b:helpercmd = ["./regurge", "-j"]
   Add_flags("-M", "model")    # Default set in regurge
+  Add_flags("-L", "location") # Default via environment (see regurge)
+  Add_flags("-P", "project")  # Default via environment (see regurge)
+
+  b:job_obj = null_job      # Init it, in case the buffer is wiped right away
+  #Start_helperprocess(bufnr("%"))  # For debugging only
+
+  execute "file [" .. persona .. " " .. bufnr("%") .. "]"
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
@@ -80,7 +117,6 @@ def Regurge()
   setlocal indentexpr=
   setlocal filetype=regurgechat
   setlocal buftype=nofile
-  execute "file [" .. name .. " " .. bufnr("%") .. "]"
   setlocal nomodified
   setlocal modifiable
 
@@ -90,7 +126,6 @@ def Regurge()
   # Move cursor to the end of the buffer
   normal! G
 
-  b:job_obj = null_job      # Init it, in case the buffer is wiped right away
   # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
   b:old_showmode = &showmode
   setlocal noshowmode
@@ -124,6 +159,7 @@ def Start_helperprocess(ourbuf: number): number
      "in_io": "pipe",
      "out_io": "pipe",
      "callback": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
+     "err_cb": (channel, msg) => ErrorfromLLM(channel, msg, ourbuf),
     })
     setbufvar(ourbuf, "job_obj", job_obj)
     return job_status(job_obj) == "run" ? 2 : 0
@@ -364,9 +400,15 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   
   if !empty(model_metadata)
     # This echo will appear in the original buffer
-    echohl Normal | echo "Regurge, total tokens: " ..
+    echohl Normal | echo extname .. ", total tokens: " ..
       json_decode(join(model_metadata)).totalTokenCount
   endif
+enddef
+
+def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
+  # Callback function for stderr from the regurge process
+  # Must be specified, otherwise vim will choke on stderr output
+  echohl ErrorMsg | echomsg extname .. " " .. ourbuf .. " " .. msg
 enddef
 
 # Function to stop the regurge helper process
@@ -378,5 +420,6 @@ def Stop_helperprocess(ourbuf: number)
 enddef
 
 # Define the user command to start the chat
-command! Regurge call Regurge()
-command! R call Regurge()
+command! -nargs=? Regurge call Regurge(<f-args>)
+# Define a shorthand alias
+command! -nargs=? R Regurge(<f-args>)
