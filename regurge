@@ -12,7 +12,8 @@
 // to authenticate to the API.  There are fallbacks in place which drop
 // back down to "gcloud auth application-default login".
 
-var modelname = "gemini-flash-lite-latest";
+//var modelname = "gemini-flash-lite-latest";
+var modelname = "gemini-2.5-flash-lite";
 
 var project = process.env.VERTEXAI_PROJECT;
 var location = process.env.VERTEXAI_LOCATION;
