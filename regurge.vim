@@ -42,10 +42,9 @@ const default_model: string = "gemini-2.5-flash-lite"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
-  Respond briefly, succinctly, bluntly, and directly.
-  No politeness, compliments, apologies, or expressions of feeling.
-  Articulate doubt if unsure.
-  Do not use Markdown by default.
+ Respond briefly, succinctly, bluntly, and directly.
+ No name-prefix, politeness, compliments, apologies, or expressions of feeling.
+ Articulate doubt if unsure.
 HERE
 
 var system_personas: dict<dict<any>> = {
@@ -114,7 +113,7 @@ def Regurge(requested_persona: string = extname)
   setlocal foldmethod=manual
   setlocal indentkeys=
   setlocal indentexpr=
-  setlocal filetype=regurgechat
+  setlocal filetype=markdown
   setlocal buftype=nofile
   setlocal nomodified
   setlocal modifiable
