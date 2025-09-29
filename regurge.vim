@@ -62,23 +62,24 @@ def Getbgvar(tailname: string, def: any): any
 enddef
 
 def Regurge(requested_persona: string = extname)
+  # Do not create/write b: (buffer local) variables before enew
   enew
   b:regurge_model = default_model    # Default override
 
   # Default is: \s to send to LLM
   const leader_sendkey: string = Getbgvar("sendkey", "s")
-  const persona: string = empty(requested_persona) ?
-                           Getbgvar("persona", extname) : requested_persona
+  b:persona = empty(requested_persona) ?
+                    Getbgvar("persona", extname) : requested_persona
   const personas: dict<dict<string>> = Getbgvar("personas", {})
   const profile: dict<any> =
-      has_key(personas, persona) ? personas[persona]
-    : has_key(system_personas, persona) ? system_personas[persona]
+      has_key(personas, b:persona) ? personas[b:persona]
+    : has_key(system_personas, b:persona) ? system_personas[b:persona]
     : { "systeminstruction": Getbgvar("systeminstruction",
                               system_personas[extname].systeminstruction)}
 
   const systeminstruction: list<string> =
     extend(profile.systeminstruction[:],
-           [ "Your name is '" .. persona .. "'."])
+           [ "Your name is '" .. b:persona .. "'."])
 
   def Add_flags(flag: string, varname: string)
     const gval: string =
@@ -97,7 +98,7 @@ def Regurge(requested_persona: string = extname)
   b:job_obj = null_job      # Init it, in case the buffer is wiped right away
   #Start_helperprocess(bufnr("%"))  # For debugging only
 
-  execute "file [" .. persona .. " " .. bufnr("%") .. "]"
+  execute "file [" .. b:persona .. " " .. bufnr("%") .. "]"
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
@@ -335,12 +336,12 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
     Dofoldop("foldopen")
   endif
 
-  cursor(start_line + 1, 1)
   if active
     Show_foldcolours()
   endif
   # Ensure the screen updates and scrolls to the new content
   normal! zt
+  cursor(start_line, 1)
   redraw
   # Pressing a mere enter jumps to the end, new line, insert mode
   nnoremap <buffer> <silent> <CR> <cmd>call <SID>EntertoType()<CR>
@@ -382,24 +383,28 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   model_response_text = split(join(model_response_text, ""), "\n", 1)
 
   const original_bufnr: number = bufnr("%")
-  const original_lnum: number = line(".")
-  const original_col: number = col(".")
 
-  try
-    # Switch to the target buffer to perform updates.
-    execute "noautocmd buffer " .. ourbuf
-    UpdateBuffer(model_response_text, model_metadata,
-                 ourbuf == original_bufnr)
-  finally
-    # Always try to return to the buffer the user was in
-    execute "noautocmd buffer " .. original_bufnr
-    cursor(original_lnum, original_col)
-  endtry
+  if ourbuf == original_buf
+    UpdateBuffer(model_response_text, model_metadata, true)
+  else
+    const original_lnum: number = line(".")
+    const original_col: number = col(".")
+    const noa_b: string = "noautocmd buffer "
+    try
+      # Switch to the target buffer to perform updates.
+      execute noa_b .. ourbuf
+      UpdateBuffer(model_response_text, model_metadata, false)
+    finally
+      # Always try to return to the buffer the user was in
+      execute noa_b .. original_bufnr
+      cursor(original_lnum, original_col)
+    endtry
+  endif
   
   if !empty(model_metadata)
     # This echo will appear in the original buffer
-    echohl Normal | echo extname .. ", total tokens: " ..
-      json_decode(join(model_metadata)).totalTokenCount
+    echohl Normal | echo getbufvar(ourbuf, "persona") .. " " .. ourbuf ..
+      ", ResponseTime: " ..  json_decode(join(model_metadata)).ResponseTime
   endif
 enddef
 
