@@ -335,7 +335,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
     Dofoldop("foldopen")
   endif
 
-  cursor(start_line, 1)
+  cursor(start_line + 1, 1)
   if active
     Show_foldcolours()
   endif
