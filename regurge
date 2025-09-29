@@ -20,33 +20,7 @@ var location = process.env.VERTEXAI_LOCATION;
 
 const readline = require("readline");
 const { VertexAI } = require("@google-cloud/vertexai");
-
-function showusage(msg) {
-  console.error(msg);
-  process.exit(64);
-}
-
-for (let i = 0; i < process.argv.length; i++) {
-  if (i + 1 < process.argv.length) {
-    if (process.argv[i] === "-P")
-      project = process.argv[++i];
-    else if (process.argv[i] === "-L")
-      location = process.argv[++i];
-    else if (process.argv[i] === "-M")
-      modelname = process.argv[++i];
-  }
-}
-
-if (!project || !location) {
-  showusage(
-    "Error: Please set VERTEXAI_PROJECT and VERTEXAI_LOCATION " +
-      "environment variables or provide them as flags."
-  );
-}
-
-const vertex_ai = new VertexAI({ project, location });
-
-const model = vertex_ai.getGenerativeModel({
+const modelconfig = {
   model: modelname,
   generationConfig: {
     // To curtail unforeseen cost-explosion.
@@ -97,7 +71,35 @@ const model = vertex_ai.getGenerativeModel({
     { category: "HARM_CATEGORY_IMAGE_HARASSMENT",	  threshold: "OFF" },
     { category: "HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT",  threshold: "OFF" },
   ],
-});
+};
+
+var runmodel;	// The currently running model connection
+var lastinstructions = "";
+
+function showusage(msg) {
+  console.error(msg);
+  process.exit(64);
+}
+
+for (let i = 0; i < process.argv.length; i++) {
+  if (i + 1 < process.argv.length) {
+    if (process.argv[i] === "-P")
+      project = process.argv[++i];
+    else if (process.argv[i] === "-L")
+      location = process.argv[++i];
+    else if (process.argv[i] === "-M")
+      modelname = process.argv[++i];
+  }
+}
+
+if (!project || !location) {
+  showusage(
+    "Error: Please set VERTEXAI_PROJECT and VERTEXAI_LOCATION " +
+      "environment variables or provide them as flags."
+  );
+}
+
+const vertex_ai = new VertexAI({ project, location });
 
 const isVerboseMode = process.argv.includes("-v");
 const isJsonMode = process.argv.includes("-j");
@@ -129,10 +131,18 @@ async function sendtoLLM(systeminstruction, contents) {
       contents: contents,
     };
 
+    var newinstruction = JSON.stringify(systeminstruction);
     if (systeminstruction.length)
-      request.system_instruction = { parts: systeminstruction }
+      modelconfig.system_instruction = { parts: systeminstruction }
+    else
+      delete(modelconfig, "system_instruction");
 
-    const streamingResult = await model.generateContentStream(request);
+    if (newinstruction != lastinstruction) {
+      runmodel = vertex_ai.getGenerativeModel(modelconfig);
+      lastinstruction = newinstruction;
+    }
+
+    const streamingResult = await runmodel.generateContentStream(request);
     let fullResponse = [];
     for await (const chunk of streamingResult.stream)
       fullResponse.push(chunk.candidates[0]?.content?.parts[0]);
@@ -211,12 +221,8 @@ async function startChat() { // Read all data from stdin
 	//  conversation history.
         if (Array.isArray(parsedInput)) {
 	  // Convert an initial model role into system instructions
-	  if (parsedInput.length && parsedInput[0].role === "model") {
-	    // FIXME This should have worked, but it does not
-	    //systeminstruction = parsedInput.shift().parts;
-	    // So we use this as a workaround
-            parsedInput[0].role = "user";
-	  }
+	  if (parsedInput.length && parsedInput[0].role === "model")
+	    systeminstruction = parsedInput.shift().parts;
           jsonChatHistory = parsedInput;
 	} else if (parsedInput && typeof parsedInput === "object") {
           // Otherwise, assume it's a single message object to append.
