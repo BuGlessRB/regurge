@@ -44,7 +44,7 @@ const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
- No politeness, compliments or apologies.
+ No name-prefix, politeness, compliments or apologies.
 HERE
 
 var system_personas: dict<dict<any>> = {
@@ -102,7 +102,7 @@ def Regurge(requested_persona: string = extname)
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
-  hi default RegurgeUser ctermfg=LightYellow guifg=LightYellow
+  hi default RegurgeUser ctermfg=Green guifg=Green
   hi default RegurgeModel ctermbg=NONE guibg=NONE
   hi default RegurgeMeta ctermfg=Cyan guifg=Cyan
 
