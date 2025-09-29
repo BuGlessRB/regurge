@@ -78,7 +78,7 @@ def Regurge(requested_persona: string = extname)
                               system_personas[extname].systeminstruction)}
 
   const systeminstruction: list<string> = extend([
-    "You are to refer to yourself as '" .. persona .. "'.",
+    "Your name is '" .. persona .. "'.",
   ], profile.systeminstruction)
 
   def Add_flags(flag: string, varname: string)
