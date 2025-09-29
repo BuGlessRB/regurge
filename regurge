@@ -8,7 +8,7 @@
 ** Sponsored by: Cubic Circle, The Netherlands
 */
 
-var modelname = "gemini-2.5-flash-lite";
+var modelname = "gemini-flash-lite-latest";
 
 var project = process.env.VERTEXAI_PROJECT;
 var location = process.env.VERTEXAI_LOCATION;

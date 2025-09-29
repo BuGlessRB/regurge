@@ -37,16 +37,15 @@ vim9script
 # RegurgeModel
 # RegurgeMeta
 
+const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
   Respond briefly, succinctly, bluntly, and directly.
   No politeness, compliments, apologies, or expressions of feeling.
   Articulate doubt if unsure.
+  Assume plain text by default.
 HERE
-
-b:regurge_model = "gemini-flash-lite-latest"  # Default override
-b:regurge_model = "gemini-flash-latest"  # Default override
 
 var system_personas: dict<dict<any>> = {
   [extname]:
@@ -64,6 +63,8 @@ enddef
 
 def Regurge(requested_persona: string = extname)
   enew
+  b:regurge_model = default_model    # Default override
+
   # Default is: \s to send to LLM
   const leader_sendkey: string = Getbgvar("sendkey", "s")
   const persona: string = empty(requested_persona) ?
