@@ -42,9 +42,9 @@ const default_model: string = "gemini-2.5-flash-lite"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
- Be brief, succinct, blunt and direct.
- No politeness, compliments or apologies.
+ Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
+ No politeness, compliments or apologies.
 HERE
 
 var system_personas: dict<dict<any>> = {
@@ -76,9 +76,9 @@ def Regurge(requested_persona: string = extname)
     : { "systeminstruction": Getbgvar("systeminstruction",
                               system_personas[extname].systeminstruction)}
 
-  const systeminstruction: list<string> = extend([
-    "Your name is '" .. persona .. "'.",
-  ], profile.systeminstruction)
+  const systeminstruction: list<string> =
+    extend(profile.systeminstruction[:],
+           [ "Your name is '" .. persona .. "'."])
 
   def Add_flags(flag: string, varname: string)
     const gval: string =
