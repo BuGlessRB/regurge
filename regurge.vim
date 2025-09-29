@@ -37,7 +37,8 @@ vim9script
 # RegurgeModel
 # RegurgeMeta
 
-const default_model: string = "gemini-flash-lite-latest"
+#const default_model: string = "gemini-flash-lite-latest"
+const default_model: string = "gemini-2.5-flash-lite"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
@@ -77,10 +78,7 @@ def Regurge(requested_persona: string = extname)
                               system_personas[extname].systeminstruction)}
 
   const systeminstruction: list<string> = extend([
-    "From this point forward, you are to refer to yourself as '" .. persona ..
-    "' in all your responses.",
-    "Do not use the name 'Bard' or any other name.",
-    "Always identify yourself as '" .. persona ..  "'."
+    "You are to refer to yourself as '" .. persona .. "'.",
   ], profile.systeminstruction)
 
   def Add_flags(flag: string, varname: string)
