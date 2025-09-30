@@ -14,6 +14,7 @@ vim9script
 # zc closes a fold
 # \r deletes all folds except the first one.
 # \R resets the conversation.
+# Whereas the \ represents the default <leader> key.
 #
 # It uses folds to hide meta information and to separate user and model
 # responses.
@@ -170,8 +171,6 @@ def Start_helperprocess(ourbuf: number): number
     endif
     # Start the regurge process in JSON mode
     job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
-     "in_io": "pipe",
-     "out_io": "pipe",
      "callback": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
      "err_cb": (channel, msg) => ErrorfromLLM(channel, msg, ourbuf),
     })
@@ -184,10 +183,10 @@ enddef
 def Hourglass(ourbuf: number, timer_id: number): void
   # Check if the buffer still exists and is a regurgechat buffer
   # This is important because the timer might fire after the buffer is wiped out
-  if !bufexists(ourbuf)
+  const start_time: any = getbufvar(ourbuf, "start_time", "")
+  if !bufexists(ourbuf) || empty(start_time)
     timer_stop(timer_id)
   endif
-  const start_time: any = getbufvar(ourbuf, "start_time")
   if bufnr("%") == ourbuf
     redraw | echo "Waiting for LLM... " ..
                   printf("%.0f", reltimefloat(reltime(start_time))) .. "s"
