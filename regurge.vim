@@ -41,14 +41,14 @@ vim9script
 # RegurgeModel
 # RegurgeMeta
 
-#const default_model: string = "gemini-flash-lite-latest"
-const default_model: string = "gemini-2.5-flash-lite"
+#const default_model: string = "gemini-2.5-flash-lite"
+const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
- Answer in staccato keywords by default.
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
+ Answer in staccato keywords by default.
  No name-prefix, politeness, compliments or apologies.
 HERE
 
