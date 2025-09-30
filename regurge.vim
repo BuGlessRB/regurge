@@ -7,11 +7,13 @@ vim9script
  # License: ISC OR GPL-3.0
 # Sponsored by: Cubic Circle, The Netherlands
 
-# Start using :R or :Regurge, then send using \s
+# Start using :R [persona] or :Regurge [persona], then send using \s
 # It starts in insert mode.  When you leave insert mode it autosends.
 # Pressing enter jumps you down, into insert mode.
 # zo opens a fold
 # zc closes a fold
+# \r deletes all folds except the first one.
+# \R resets the conversation.
 #
 # It uses folds to hide meta information and to separate user and model
 # responses.
@@ -24,6 +26,8 @@ vim9script
 # within .vimrc:
 #
 # regurge_sendkey
+# regurge_reducekey
+# regurge_resetkey
 # regurge_model
 # regurge_project
 # regurge_location
@@ -66,7 +70,11 @@ def Regurge(requested_persona: string = extname)
   b:regurge_model = default_model    # Default override
 
   # Default is: \s to send to LLM
-  const leader_sendkey: string = Getgvar("sendkey", "s")
+  const leader_sendkey:   string = Getgvar("sendkey",   "s")
+  # Default is: \r reduce the chat to only the user input
+  const leader_reducekey: string = Getgvar("reducekey", "r")
+  # Default is: \R reset the chat to system instructions only
+  const leader_resetkey:  string = Getgvar("resetkey",  "R")
   b:persona = empty(requested_persona) ?
                     Getgvar("persona", extname) : requested_persona
   const personas: dict<dict<string>> = Getgvar("personas", {})
@@ -129,14 +137,19 @@ def Regurge(requested_persona: string = extname)
   setlocal noshowmode
   feedkeys("i")   # Enter insert mode
 
-  autocmd BufWipeout <buffer> Stop_helperprocess(str2nr(expand("<abuf>")))
+  def Definelkey(key: string, func: string): void
+    execute "nnoremap <buffer> <silent> <Leader>" ..
+            key .. " <cmd>call <SID>" .. func .. "<CR>"
+  enddef
+
+  autocmd BufWipeout      <buffer> Stop_helperprocess(str2nr(expand("<abuf>")))
   autocmd BufEnter,SafeState <buffer> Show_foldcolours()
-  autocmd BufLeave <buffer> Hide_foldcolours()
-  autocmd InsertEnter <buffer> UnsetMagicEnter()
-  autocmd InsertLeave <buffer> AutoSend()
-  # Define a normal mode mapping to send the message
-  execute "nnoremap <buffer> <silent> <Leader>" ..
-           leader_sendkey .. " <cmd>call <SID>SendtoLLM()<CR>"
+  autocmd BufLeave           <buffer> Hide_foldcolours()
+  autocmd InsertEnter        <buffer> UnsetMagicEnter()
+  autocmd InsertLeave        <buffer> AutoSend()
+  Definelkey(leader_sendkey,   "SendtoLLM()")
+  Definelkey(leader_reducekey, "ResetChat(true)")
+  Definelkey(leader_resetkey,  "ResetChat(false)")
 
   # Buffer-local list to store match IDs for dynamic highlighting.
   b:regurge_fold_match_ids = []
@@ -411,6 +424,25 @@ def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stderr from the regurge process
   # Must be specified, otherwise vim will choke on stderr output
   echohl ErrorMsg | echomsg extname .. " " .. ourbuf .. " " .. msg
+enddef
+
+def ResetChat(reduce: bool): void
+  var foundmeat: bool = false
+  for lnum in range(1, line("$"))
+    const flevel: number = foldlevel(lnum)
+    if flevel == 0
+      foundmeat = true
+      if reduce
+        continue
+      endif
+    endif
+    if foundmeat
+      delete(lnum)
+    endif
+  endfor
+  if !reduce
+    EntertoType()
+  endif
 enddef
 
 # Function to stop the regurge helper process

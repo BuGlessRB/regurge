@@ -6,7 +6,7 @@ regurge.vim is the LLM interface AGI (As God Intended).
 regurge has the following features:
 - Connects to VertexAI.
 - Disables censoring, sets model temperature to zero, answers are
-  fully reproducible.
+  fully reproducible, Google Search grounding enabled.
 - JSON mode.
 
 regurge.vim supports:
@@ -28,7 +28,8 @@ Vim9
 ## Basic usage
 
 Simply drop regurge in your path and load regurge.vim.
-The start the conversation using :R
+Start the conversation using `:R [persona]`
+Use `\s` to send the conversation to the LLM.
 
 ## References
 
