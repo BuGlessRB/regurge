@@ -46,12 +46,13 @@ const default_model: string = "gemini-2.5-flash-lite"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_systeminstruction: list<string> =<< trim HERE
+ Answer in staccato keywords by default.
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
  No name-prefix, politeness, compliments or apologies.
 HERE
 
-var system_personas: dict<dict<any>> = {
+const system_personas: dict<dict<any>> = {
   [extname]:
   { "systeminstruction": default_systeminstruction,
     "model": "",      # Override model if non-empty
@@ -67,6 +68,7 @@ enddef
 def Regurge(requested_persona: string = extname)
   # Do not create/write b: (buffer local) variables before enew
   enew
+  const ourbuf: number = bufnr("%")
   b:regurge_model = default_model    # Default override
 
   # Default is: \s to send to LLM
@@ -103,9 +105,9 @@ def Regurge(requested_persona: string = extname)
   Add_flags("-P", "project")  # Default via environment (see regurge)
 
   b:job_obj = null_job      # Init it, in case the buffer is wiped right away
-  #Start_helperprocess(bufnr("%"))  # For debugging only
+  #Start_helperprocess(ourbuf)  # For debugging only
 
-  execute "file [" .. b:persona .. " " .. bufnr("%") .. "]"
+  execute "file [" .. b:persona .. " " .. ourbuf .. "]"
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
@@ -148,8 +150,8 @@ def Regurge(requested_persona: string = extname)
   autocmd InsertEnter        <buffer> UnsetMagicEnter()
   autocmd InsertLeave        <buffer> AutoSend()
   Definelkey(leader_sendkey,   "SendtoLLM()")
-  Definelkey(leader_reducekey, "ResetChat(true)")
-  Definelkey(leader_resetkey,  "ResetChat(false)")
+  Definelkey(leader_reducekey, "ResetChat(v:false)")
+  Definelkey(leader_resetkey,  "ResetChat(v:true)")
 
   # Buffer-local list to store match IDs for dynamic highlighting.
   b:regurge_fold_match_ids = []
@@ -426,21 +428,23 @@ def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
   echohl ErrorMsg | echomsg extname .. " " .. ourbuf .. " " .. msg
 enddef
 
-def ResetChat(reduce: bool): void
-  var foundmeat: bool = false
-  for lnum in range(1, line("$"))
-    const flevel: number = foldlevel(lnum)
-    if flevel == 0
-      foundmeat = true
-      if reduce
-        continue
-      endif
+def ResetChat(fullreset: bool): void
+  # Only perform this on Regurge buffers
+  if empty(get(b:, "regurge_model", ""))
+    return
+  endif
+  var lnum: number = 1
+  while foldlevel(lnum) == 1
+    lnum += 1
+  endwhile
+  while lnum <= line("$")
+    if foldlevel(lnum) != 0 || fullreset
+      deletebufline(bufnr("%"), lnum)
+    else
+      lnum += 1
     endif
-    if foundmeat
-      delete(lnum)
-    endif
-  endfor
-  if !reduce
+  endwhile
+  if fullreset
     EntertoType()
   endif
 enddef
