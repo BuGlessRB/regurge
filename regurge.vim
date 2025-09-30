@@ -49,6 +49,8 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
+ When reviewing add a short summary of all issues at the top,
+ followed by a unified-diff illustrating the suggested changes.
  No name-prefix, politeness, compliments or apologies.
 HERE
 
