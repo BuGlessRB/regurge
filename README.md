@@ -29,7 +29,10 @@ Vim9
 
 Simply drop regurge in your path and load regurge.vim.
 Start the conversation using `:R [persona]`
-Use `\s` to send the conversation to the LLM.
+When exiting insert mode, it autodetects if it can send to the LLM.
+Use `\s` to send the conversation to the LLM explicitly.
+Use `\r` to reduce the conversation to only your questions.
+Use `\R` to reset the conversation to an empty question (cheaper).
 
 ## References
 
