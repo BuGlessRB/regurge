@@ -35,11 +35,11 @@ const modelconfig = {
     temperature: 0.0,
     topP: 0.0001,
     topK: 1.0,
-    seed: 0,
+    seed: 42,
 
     // Style points, keep it neutral: do not enforce.
-    frequencyPenalty: 0.0, // -2.0 .. 2.0
-    presencePenalty: 0.0,  // -2.0 .. 2.0
+    frequencyPenalty: 0.5, // -2.0 .. 2.0
+    presencePenalty: 0.5,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 
     candidateCount: 1,

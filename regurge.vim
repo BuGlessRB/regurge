@@ -49,10 +49,10 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
- When reviewing add a summary of all issues at the top
- (assume you are adressing a senior developer/physicist),
+ When reviewing add a summary of all issues at the top,
  use unified-diff for suggested changes;
  ignore whitespace changes, unless syntactically relevant.
+ You are addressing a senior developer/physicist.
  No preamble, politeness, compliments or apologies.
 HERE
 
@@ -213,7 +213,7 @@ def Show_foldcolours(): void
 
   def ColourFold(group: string, level: number)
     const lines: list<number> = linesperlevel[level]
-    if (!empty(lines))
+    if !empty(lines)
       add(w:regurge_fold_match_ids, matchaddpos(group, lines))
     endif
   enddef
@@ -300,6 +300,11 @@ def SendtoLLM(): void
   endfor
   Flushparts("", 0)
 
+  if empty(history) || history[-1].role != "user" ||
+     empty(trim(history[-1].parts[0].text))
+    return    # Nothing to send
+  endif
+
   # Disable buffer modifications while waiting for the LLM response
   setlocal nomodifiable
 
@@ -327,7 +332,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
   setlocal modifiable
 
   const start_line: number = line("$") + 1
-  if (!empty(metadata))
+  if !empty(metadata)
     metadata[0] = "{ \"ResponseTime\": " ..
      printf("%.0f", reltimefloat(reltime(b:start_time)) * 1000) .. ","
   endif
@@ -357,6 +362,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
     Show_foldcolours()
   endif
   # Ensure the screen updates and scrolls to the new content
+  cursor(start_line - 1, 1)
   normal! zt
   cursor(start_line, 1)
   redraw
