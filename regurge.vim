@@ -49,9 +49,9 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
- When reviewing add a short summary of all issues at the top,
- followed by a unified-diff illustrating the suggested changes;
- assume you are talking to a senior developer.
+ When reviewing add a short summary of all issues at the top
+ (assume you are adressing a senior developer),
+ use a unified-diff illustrating the suggested changes.
  No name-prefix, politeness, compliments or apologies.
 HERE
 
@@ -114,9 +114,9 @@ def Regurge(requested_persona: string = extname)
 
   # Define custom highlight groups for fold levels.
   # These are default definitions. Users can override these.
-  hi default RegurgeUser ctermfg=Green guifg=Green
-  hi default RegurgeModel ctermbg=NONE guibg=NONE
-  hi default RegurgeMeta ctermfg=Cyan guifg=Cyan
+  hi default RegurgeUser  ctermfg=Green guifg=Green
+  hi default RegurgeModel ctermfg=NONE  guifg=NONE
+  hi default RegurgeMeta  ctermfg=Cyan  guifg=Cyan
 
   setlocal noswapfile
   setlocal noundofile
@@ -419,7 +419,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
       cursor(original_lnum, original_col)
     endtry
   endif
-  
+
   if !empty(model_metadata)
     # This echo will appear in the original buffer
     echohl Normal | echo getbufvar(ourbuf, "persona") .. " " .. ourbuf ..
