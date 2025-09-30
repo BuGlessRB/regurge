@@ -32,7 +32,7 @@ vim9script
 # regurge_project
 # regurge_location
 #
-# regurge_personas
+# regurge_personas: dict<dict<any>>
 # regurge_persona
 # regurge_systeminstruction
 #
@@ -49,10 +49,11 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
- When reviewing add a short summary of all issues at the top
- (assume you are adressing a senior developer),
- use a unified-diff illustrating the suggested changes.
- No name-prefix, politeness, compliments or apologies.
+ When reviewing add a summary of all issues at the top
+ (assume you are adressing a senior developer/physicist),
+ use unified-diff for suggested changes;
+ ignore whitespace changes, unless syntactically relevant.
+ No preamble, politeness, compliments or apologies.
 HERE
 
 const system_personas: dict<dict<any>> = {
@@ -90,7 +91,7 @@ def Regurge(requested_persona: string = extname)
                               system_personas[extname].systeminstruction)}
 
   const systeminstruction: list<string> =
-    extend(profile.systeminstruction[:],
+    extend(profile.systeminstruction[ : ],
            [ "Your name is '" .. b:persona .. "'."])
 
   def Add_flags(flag: string, varname: string)
@@ -156,9 +157,6 @@ def Regurge(requested_persona: string = extname)
   Definelkey(leader_reducekey, "ResetChat(v:false)")
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
 
-  # Buffer-local list to store match IDs for dynamic highlighting.
-  b:regurge_fold_match_ids = []
-
   redraw | echo "Type your messages, send them to the LLM using " ..
                  get(g:, "mapleader", "\\") .. "s"
 enddef
@@ -199,12 +197,12 @@ enddef
 # FIXME The fold-level-dependent highlighting has window scope, so it needs
 # to be toggled on and off, depending on the buffer being in view
 def Hide_foldcolours(): void
-  for id in b:regurge_fold_match_ids
-    # FIXME If the buffer is visible more than once, this gets confused
-    # and shows unknown ID errors
+  const fold_match_ids: list<number> = get(w:, "regurge_fold_match_ids", [])
+  # Window-local list to store match IDs for dynamic highlighting.
+  for id in fold_match_ids
     matchdelete(id)
   endfor
-  b:regurge_fold_match_ids = []
+  w:regurge_fold_match_ids = []
 enddef
 
 # Function to apply fold-level-dependent highlighting to visible lines.
@@ -216,7 +214,7 @@ def Show_foldcolours(): void
   def ColourFold(group: string, level: number)
     const lines: list<number> = linesperlevel[level]
     if (!empty(lines))
-      add(b:regurge_fold_match_ids, matchaddpos(group, lines))
+      add(w:regurge_fold_match_ids, matchaddpos(group, lines))
     endif
   enddef
 
@@ -308,7 +306,7 @@ def SendtoLLM(): void
   # Start the timer for the waiting message
   b:start_time = reltime()
   b:timer_id = timer_start(1000,
-                function("Hourglass", [bufnr("%")]), {"repeat": -1})
+                (id) => Hourglass(bufnr("%"), id), {"repeat": -1})
 
   # Send the JSON history to the stdin of the regurge process
   ch_sendraw(job_getchannel(b:job_obj), json_encode(history) .. "\n")
@@ -378,9 +376,9 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   try
     json_parts = json_decode(fullmsg)
     if empty(json_parts)
-      throw "Crashed?"
+      throw "E491:"
     endif
-  catch /.*/
+  catch /^E491:/
     setbufvar(ourbuf, "partial_msg", fullmsg)
     if Start_helperprocess(ourbuf) == 1
       return               # Wait for a complete msg
@@ -406,8 +404,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   if ourbuf == original_buf
     UpdateBuffer(model_response_text, model_metadata, true)
   else
-    const original_lnum: number = line(".")
-    const original_col: number = col(".")
+    const original_pos: list<number> = getcurpos()[1 : ]
     const noa_b: string = "noautocmd buffer "
     try
       # Switch to the target buffer to perform updates.
@@ -416,7 +413,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
     finally
       # Always try to return to the buffer the user was in
       execute noa_b .. original_buf
-      cursor(original_lnum, original_col)
+      cursor(original_pos)
     endtry
   endif
 
@@ -442,6 +439,12 @@ def ResetChat(fullreset: bool): void
   while foldlevel(lnum) == 1
     lnum += 1
   endwhile
+  const original_pos: list<number> = getcurpos()[1 : ]
+  cursor(lnum, 1)
+  normal! zt
+  cursor(original_pos)
+  # Ensure the screen updates and scrolls to the new content
+  redraw
   while lnum <= line("$")
     if foldlevel(lnum) != 0 || fullreset
       deletebufline(bufnr("%"), lnum)

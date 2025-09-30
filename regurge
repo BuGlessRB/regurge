@@ -33,7 +33,7 @@ const modelconfig = {
 
     // The following settings make the model's responses deterministic.
     temperature: 0.0,
-    topP: 1.0,
+    topP: 0.0001,
     topK: 1.0,
     seed: 0,
 
@@ -42,6 +42,7 @@ const modelconfig = {
     presencePenalty: 0.0,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 
+    candidateCount: 1,
     // Probabilities
     // response_logprobs: true,
     // logprobs: 4,  // Show the four runners up alternative probs
