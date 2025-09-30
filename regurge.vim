@@ -20,7 +20,7 @@ vim9script
 # back.  This cannot easily be fixed, since Vim does not restore manual folds
 # at the moment.
 #
-# Optional buffer or global variables which can be configured from
+# Optional global variables which can be configured from
 # within .vimrc:
 #
 # regurge_sendkey
@@ -56,9 +56,8 @@ var system_personas: dict<dict<any>> = {
   },
 }
 
-def Getbgvar(tailname: string, def: any): any
-  const gvarname: string = gvarprefix .. tailname
-  return get(b:, gvarname, get(g:, gvarname, def))
+def Getgvar(tailname: string, def: any): any
+  return get(g:, gvarprefix .. tailname, def)
 enddef
 
 def Regurge(requested_persona: string = extname)
@@ -67,14 +66,14 @@ def Regurge(requested_persona: string = extname)
   b:regurge_model = default_model    # Default override
 
   # Default is: \s to send to LLM
-  const leader_sendkey: string = Getbgvar("sendkey", "s")
+  const leader_sendkey: string = Getgvar("sendkey", "s")
   b:persona = empty(requested_persona) ?
-                    Getbgvar("persona", extname) : requested_persona
-  const personas: dict<dict<string>> = Getbgvar("personas", {})
+                    Getgvar("persona", extname) : requested_persona
+  const personas: dict<dict<string>> = Getgvar("personas", {})
   const profile: dict<any> =
       has_key(personas, b:persona) ? personas[b:persona]
     : has_key(system_personas, b:persona) ? system_personas[b:persona]
-    : { "systeminstruction": Getbgvar("systeminstruction",
+    : { "systeminstruction": Getgvar("systeminstruction",
                               system_personas[extname].systeminstruction)}
 
   const systeminstruction: list<string> =
@@ -84,7 +83,7 @@ def Regurge(requested_persona: string = extname)
   def Add_flags(flag: string, varname: string)
     const gval: string =
       has_key(profile, varname) && !empty(profile[varname]) ?
-       profile[varname] : Getbgvar(varname, "")
+       profile[varname] : Getgvar(varname, "")
     if !empty(gval)
       extend(b:helpercmd, [flag, gval])
     endif
