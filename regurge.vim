@@ -49,14 +49,14 @@ const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_autofold_code: number = 8
 const default_systeminstruction: list<string> =<< trim HERE
- Be exceedingly brief, succinct, blunt and direct.
+ Be exceedingly brief, succinct, blunt, direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
  When reviewing add a summary of all issues at the top,
  use unified-diff for suggested changes;
- ignore whitespace changes, unless syntactically relevant.
+ suppress whitespace changes, unless syntactically relevant.
  You are addressing a senior developer/physicist.
- No preamble, politeness, compliments or apologies.
+ No preamble, politeness, compliments, apologies.
 HERE
 
 const system_personas: dict<dict<any>> = {
