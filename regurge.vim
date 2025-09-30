@@ -50,7 +50,8 @@ const default_systeminstruction: list<string> =<< trim HERE
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
  When reviewing add a short summary of all issues at the top,
- followed by a unified-diff illustrating the suggested changes.
+ followed by a unified-diff illustrating the suggested changes;
+ assume you are talking to a senior developer.
  No name-prefix, politeness, compliments or apologies.
 HERE
 
@@ -199,6 +200,8 @@ enddef
 # to be toggled on and off, depending on the buffer being in view
 def Hide_foldcolours(): void
   for id in b:regurge_fold_match_ids
+    # FIXME If the buffer is visible more than once, this gets confused
+    # and shows unknown ID errors
     matchdelete(id)
   endfor
   b:regurge_fold_match_ids = []
