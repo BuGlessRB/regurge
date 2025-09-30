@@ -32,6 +32,7 @@ vim9script
 # regurge_model
 # regurge_project
 # regurge_location
+# regurge_autofold_code: number	      # More than this many lines are folded
 #
 # regurge_personas: dict<dict<any>>
 # regurge_persona
@@ -46,6 +47,7 @@ vim9script
 const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
+const default_autofold_code: number = 8
 const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt and direct.
  Articulate doubt if unsure.
@@ -118,17 +120,17 @@ def Regurge(requested_persona: string = extname)
   # These are default definitions. Users can override these.
   hi default RegurgeUser  ctermfg=Green guifg=Green
   hi default RegurgeModel ctermfg=NONE  guifg=NONE
-  hi default RegurgeMeta  ctermfg=Cyan  guifg=Cyan
+  hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
 
   setlocal noswapfile
   setlocal noundofile
   setlocal wrap
   setlocal linebreak
   setlocal noautoindent nosmartindent nocindent
-  setlocal foldmethod=manual
   setlocal indentkeys=
   setlocal indentexpr=
   setlocal filetype=markdown
+  setlocal foldmethod=manual
   setlocal buftype=nofile
   setlocal nomodified
   setlocal modifiable
@@ -186,6 +188,7 @@ def Hourglass(ourbuf: number, timer_id: number): void
   const start_time: any = getbufvar(ourbuf, "start_time", "")
   if !bufexists(ourbuf) || empty(start_time)
     timer_stop(timer_id)
+    return
   endif
   if bufnr("%") == ourbuf
     redraw | echo "Waiting for LLM... " ..
@@ -288,14 +291,16 @@ def SendtoLLM(): void
     add(text_lines, getline(lnum))
   enddef
 
+  var pastmeta: bool
   for lnum in range(1, line("$"))
     const flevel: number = foldlevel(lnum)
     if flevel == 0
-      Flushparts("user", lnum)
-    elseif flevel == 1
+      pastmeta = false
+      Flushparts("user", lnum)        # Look for markdown marker
+    elseif flevel == 1 || pastmeta || getline(lnum) =~ '^```'
+      pastmeta = true
       Flushparts("model", lnum)
     endif
-    # Drop foldlevels > 1
   endfor
   Flushparts("", 0)
 
@@ -357,6 +362,24 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
     Dofoldop("foldopen")
   endif
 
+  # Fold first-level markdown quoted code snippets
+  var lnum: number = end_meta_line
+  var lstart: number
+  while lnum < end_line
+    lnum += 1
+    const line: string = getline(lnum)
+    if line =~ '^```'
+      if line =~ '^```\w\+$'
+        lstart = lnum
+      elseif line =~ '^```\s*$'
+	execute ":" .. lstart .. "," .. lnum .. "fold"
+        if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
+	  execute ":" .. lstart .. "foldopen"
+	endif
+      endif
+    endif
+  endwhile
+
   if active
     Show_foldcolours()
   endif
@@ -383,7 +406,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
     if empty(json_parts)
       throw "E491:"
     endif
-  catch /^E491:/
+  catch /E491:/
     setbufvar(ourbuf, "partial_msg", fullmsg)
     if Start_helperprocess(ourbuf) == 1
       return               # Wait for a complete msg
@@ -415,6 +438,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
       # Switch to the target buffer to perform updates.
       execute noa_b .. ourbuf
       UpdateBuffer(model_response_text, model_metadata, false)
+    catch
     finally
       # Always try to return to the buffer the user was in
       execute noa_b .. original_buf
