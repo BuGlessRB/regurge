@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC OR GPL-3.0",
   "dependencies": {
-    "@google-cloud/vertexai": "*"
+    "@google/genai": "*"
   },
   "bin": {
     "regurge": "./regurge"

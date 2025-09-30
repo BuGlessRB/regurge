@@ -15,20 +15,29 @@
 //var modelname = "gemini-flash-lite-latest";
 var modelname = "gemini-2.5-flash-lite";
 
-var project = process.env.VERTEXAI_PROJECT;
-var location = process.env.VERTEXAI_LOCATION;
+var project = process.env.GOOGLE_CLOUD_PROJECT
+           || process.env.VERTEXAI_PROJECT;
+var location = process.env.GOOGLE_CLOUD_LOCATION
+            || process.env.VERTEXAI_LOCATION;
 
 const readline = require("readline");
-const { VertexAI } = require("@google-cloud/vertexai");
+const {
+  HarmBlockMethod,
+  HarmBlockThreshold,
+  HarmCategory,
+  Modality,
+  GoogleGenAI,
+} = require('@google/genai');
+
 const modelconfig = {
   model: modelname,
-  generationConfig: {
+  config: {
     // To curtail unforeseen cost-explosion.
     //maxOutputTokens: 131072,
 
     // responseMimeType: "application/json",
-    responseModalities: ["TEXT",
-                        // "IMAGE","AUDIO",
+    responseModalities: [Modality.TEXT,
+                        // Modality.IMAGE, Modality.AUDIO,
                         ],
 
     // The following settings make the model's responses deterministic.
@@ -42,10 +51,20 @@ const modelconfig = {
     presencePenalty: 0.5,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 
+     thinkingConfig: {
+      includeThoughts: false,
+      thinkingBudget: 0,
+    },
     candidateCount: 1,
     // Probabilities
-    // response_logprobs: true,
+    // responseLogprobs: true,
     // logprobs: 4,  // Show the four runners up alternative probs
+
+    // modelSelectionConfig:
+    //   FeatureSelectionPreference.FEATURE_SELECTION_PREFERENCE_UNSPECIFIED,
+    //   FeatureSelectionPreference.PRIORITIZE_QUALITY,
+    //   FeatureSelectionPreference.BALANCED,
+    //   FeatureSelectionPreference.PRIORITIZE_COST,
 
     // routingConfig: {
     //   manualMode: {
@@ -57,37 +76,44 @@ const modelconfig = {
       //   modelRoutingPreference: "BALANCED"
       //   modelRoutingPreference: "PRIORITIZE_COST"
       // }
-    // }
+    // },
+    tools: [
+      { googleSearch: { excludeDomains: [] } },
+      //{ googleMaps: { enableWidget: true } },
+      //{ enterpriseWebSearch: { excludeDomains: [] } },
+      //{ codeExecution: {} },
+      //{ urlContext: {} },
+    ],
+    toolConfig: {
+      retrievalConfig: {
+        languageCode: "en"
+      }
+    },
+    safetySettings: [
+      // Uncensored
+      { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_IMAGE_HARASSMENT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_IMAGE_HATE,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.OFF, },
+      { category: HarmCategory.HARM_CATEGORY_UNSPECIFIED,
+        threshold: HarmBlockThreshold.OFF, },
+    ],
   },
-  tools: [
-    { googleSearch: { excludeDomains: [] } },
-    //{ googleMaps: { enableWidget: true } },
-    //{ enterpriseWebSearch: { excludeDomains: [] } },
-    //{ codeExecution: {} },
-    //{ urlContext: {} },
-  ],
-  toolConfig: {
-    retrievalConfig: {
-      languageCode: "en"
-    }
-  },
-  safetySettings: [
-    // Uncensored
-    { category: "HARM_CATEGORY_UNSPECIFIED",		  threshold: "OFF" },
-    { category: "HARM_CATEGORY_HATE_SPEECH",		  threshold: "OFF" },
-    { category: "HARM_CATEGORY_DANGEROUS_CONTENT",	  threshold: "OFF" },
-    { category: "HARM_CATEGORY_HARASSMENT",		  threshold: "OFF" },
-    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",	  threshold: "OFF" },
-    { category: "HARM_CATEGORY_CIVIC_INTEGRITY",	  threshold: "OFF" },
-    { category: "HARM_CATEGORY_IMAGE_HATE",		  threshold: "OFF" },
-    { category: "HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT",  threshold: "OFF" },
-    { category: "HARM_CATEGORY_IMAGE_HARASSMENT",	  threshold: "OFF" },
-    { category: "HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT",  threshold: "OFF" },
-  ],
 };
-
-var runmodel;	// The currently running model connection
-var lastinstruction = "";
 
 function showusage(msg) {
   console.error(msg);
@@ -112,7 +138,11 @@ if (!project || !location) {
   );
 }
 
-const vertex_ai = new VertexAI({ project, location });
+const gen_ai = new GoogleGenAI({
+  vertexai: true,
+  project: project,
+  location: location,
+});
 
 const isVerboseMode = process.argv.includes("-v");
 const isJsonMode = process.argv.includes("-j");
@@ -139,36 +169,28 @@ async function sendtoLLM(systeminstruction, contents) {
     process.exit(1);
   }
 
+  const s_i = "systemInstruction";
+  if (systeminstruction.length)
+    modelconfig.config[s_i] = { parts: systeminstruction }
+  else
+    delete(modelconfig.config, s_i);
+  modelconfig.contents = contents;
+
   try {
-    const request = {
-      contents: contents,
-    };
+    const mresponse = await gen_ai.models.generateContent(modelconfig);
+    let fullResponse = await mresponse.candidates[0]?.content;
 
-    const newinstruction = JSON.stringify(systeminstruction);
+    // FIXME There is lots of more information here
+    // GroundingUrls etc.
 
-    if (newinstruction != lastinstruction) {
-      const s_i = "systemInstruction";
-      if (systeminstruction.length)
-        modelconfig[s_i] = { parts: systeminstruction }
-      else
-        delete(modelconfig, s_i);
-      runmodel = vertex_ai.getGenerativeModel(modelconfig);
-      lastinstruction = newinstruction;
-    }
-
-    const streamingResult = await runmodel.generateContentStream(request);
-    let fullResponse = [];
-    for await (const chunk of streamingResult.stream)
-      fullResponse.push(chunk.candidates[0]?.content?.parts[0]);
-
-    const aggregatedResponse = await streamingResult.response;
-    if (aggregatedResponse.usageMetadata && isVerboseMode)
-      console.error("\nUsage Metadata:", aggregatedResponse.usageMetadata);
+    if (mresponse.usageMetadata && isVerboseMode)
+      console.error("\nUsage Metadata:", mresponse.usageMetadata);
+    fullResponse = fullResponse.parts;
     contents.push({ "role": "model",
-                    "parts": fullResponse });
+                    "parts": fullResponse.parts });
     if (isJsonMode) {
       fullResponse.push({"usageMetadata":
-                 JSON.stringify(aggregatedResponse.usageMetadata, null, 2)});
+                 JSON.stringify(mresponse.usageMetadata, null, 2)});
     }
     return fullResponse;
   } catch (error) {
