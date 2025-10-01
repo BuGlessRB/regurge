@@ -29,9 +29,9 @@ const {
   GoogleGenAI,
 } = require('@google/genai');
 
-// This has been copied from regurge.vim.
-// regurge only uses this in interactive mode.
-// In JSON mode the systemInstruction is passed as data.
+  // This has been copied from regurge.vim.
+ //  regurge only uses this in interactive mode.
+//   In JSON mode the systemInstruction is passed as data.
 const cmdline_def_systeminstruction = [
   { text: `Be exceedingly brief, succinct, blunt, direct.
 Articulate doubt if unsure.
@@ -210,11 +210,11 @@ async function* sendtoLLM(systeminstruction, contents) {
     let modelversion;
     let meta;
     for await (mresponse of respstream) {
-      //console.log(mresponse);
+      //console.log(mresponse); // For debugging only
       for (const candidate of mresponse.candidates) {
         const content = await candidate.content;
-        // FIXME There is lots of more information here
-        // GroundingUrls etc.
+         // FIXME There is lots of more information here
+        //  GroundingUrls etc.
 	for (const part of content.parts)
           candidatesbytecount += part.text.length;
       }
@@ -244,9 +244,9 @@ async function* sendtoLLM(systeminstruction, contents) {
     }
   } catch (error) {
     if (error.name === "AbortError") {
-      // Supply "final" data
+        // Supply "final" data
       yield ([{"usageMetadata": JSON.stringify({"abort": 1}, null, 2)}]);
-      // Silently ignore this error, since it is user requested
+      //   Silently ignore this error, since it is user requested
       return;
     }
     console.error("Error calling Vertex AI Gemini API:", error);
@@ -279,12 +279,12 @@ async function sendMessageInteractive(message) {
   }
 }
 
-async function startChat() { // Read all data from stdin
+async function startChat() {   // Read all data from stdin
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: !isJsonMode, // Only use terminal features (like prompt)
-                           // in interactive mode
+                          //  in interactive mode
   });
 
   if (process.argv.includes("-h")) {
@@ -308,7 +308,7 @@ async function startChat() { // Read all data from stdin
     rl.on("line", async (line) => { // Process each line as a potential
       try {                        //  JSON object
         const parsedInput = JSON.parse(previouslines + line);
-	previouslines = "";	 // Clear parsing history
+	previouslines = "";	 //    Clear parsing history
 
          // If input is an array, assume it's the initial full
 	//  conversation history.
@@ -319,9 +319,9 @@ async function startChat() { // Read all data from stdin
           jsonChatHistory = parsedInput;
 	} else if (parsedInput && typeof parsedInput === "object") {
 	  if (parsedInput.abort) {
-	    // Signal abort to the running stream
+	      // Signal abort to the running stream
 	    abortctrl.abort();
-	    // Ignore the rest of the message
+	    //   Ignore the rest of the message
 	    return;
 	  }
           // Otherwise, assume it's a single message object to append.
@@ -339,7 +339,7 @@ async function startChat() { // Read all data from stdin
 	try {
 	  for await (const fullResponse of
 	             sendtoLLM(systeminstruction, jsonChatHistory)) {
-	    //  Just send back the model's response
+	    // Just send back the model's response
             process.stdout.write(JSON.stringify(fullResponse) + "\n");
 	  }
 	} catch (error) {
