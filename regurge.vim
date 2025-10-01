@@ -14,6 +14,7 @@ vim9script
 # zc closes a fold
 # \r deletes all folds except the first one.
 # \R resets the conversation.
+# \a aborts the running response.
 # Whereas the \ represents the default <leader> key.
 #
 # It uses folds to hide meta information and to separate user and model
