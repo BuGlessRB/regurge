@@ -36,22 +36,20 @@ const cmdline_def_systeminstruction = [
   { text: `Be exceedingly brief, succinct, blunt, direct.
 Articulate doubt if unsure.
 Answer in staccato keywords by default.
-When reviewing add a summary of all issues at the top,
-use unified-diff for suggested changes;
-suppress whitespace changes, unless syntactically relevant.
+When reviewing input: add a summary of all issues at the top,
+use unified-diff for suggested changes,
+suppress whitespace changes unless syntactically relevant.
 You are addressing a senior developer/physicist.
 No preamble, politeness, compliments, apologies, disclaimers.
 Your name is 'Regurge'.`
   }
 ];
 
-// Currently unused, but could be activated using abortctrl.abort()
-const abortctrl = new AbortController();
+var abortctrl;
 
 const modelconfig = {
   model: modelname,
   config: {
-    abortSignal: abortctrl.signal,
     // To curtail unforeseen cost-explosion.
     //maxOutputTokens: 131072,
 
@@ -179,6 +177,9 @@ const isJsonMode = process.argv.includes("-j");
  * @returns {Promise<Array<Object>>} The full text response from the model.
  */
 async function* sendtoLLM(systeminstruction, contents) {
+   // Create a new control on every response, otherwise we get warnings
+  //  about too many (not-yet-garbage collected) listeners
+  abortctrl = new AbortController();
   if (!contents.length) {
     console.error(
       "Error: Contents for Gemini API must be a non-empty array."
@@ -195,6 +196,7 @@ async function* sendtoLLM(systeminstruction, contents) {
   else
     delete(modelconfig.config, s_i);
   modelconfig.contents = contents;
+  modelconfig.config.abortSignal = abortctrl.signal;
 
   try {
     let promptbytecount = 0;
@@ -320,7 +322,7 @@ async function startChat() {   // Read all data from stdin
 	} else if (parsedInput && typeof parsedInput === "object") {
 	  if (parsedInput.abort) {
 	      // Signal abort to the running stream
-	    abortctrl.abort();
+	    abortctrl?.abort();
 	    //   Ignore the rest of the message
 	    return;
 	  }
