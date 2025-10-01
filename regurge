@@ -40,7 +40,7 @@ When reviewing add a summary of all issues at the top,
 use unified-diff for suggested changes;
 suppress whitespace changes, unless syntactically relevant.
 You are addressing a senior developer/physicist.
-No preamble, politeness, compliments, apologies.
+No preamble, politeness, compliments, apologies, disclaimers.
 Your name is 'Regurge'.`
   }
 ];

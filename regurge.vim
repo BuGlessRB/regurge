@@ -57,7 +57,7 @@ const default_systeminstruction: list<string> =<< trim HERE
  use unified-diff for suggested changes;
  suppress whitespace changes, unless syntactically relevant.
  You are addressing a senior developer/physicist.
- No preamble, politeness, compliments, apologies.
+ No preamble, politeness, compliments, apologies, disclaimers.
 HERE
 
 const system_personas: dict<dict<any>> = {
