@@ -29,9 +29,29 @@ const {
   GoogleGenAI,
 } = require('@google/genai');
 
+// This has been copied from regurge.vim.
+// regurge only uses this in interactive mode.
+// In JSON mode the systemInstruction is passed as data.
+const cmdline_def_systeminstruction = [
+  { text: `Be exceedingly brief, succinct, blunt, direct.
+Articulate doubt if unsure.
+Answer in staccato keywords by default.
+When reviewing add a summary of all issues at the top,
+use unified-diff for suggested changes;
+suppress whitespace changes, unless syntactically relevant.
+You are addressing a senior developer/physicist.
+No preamble, politeness, compliments, apologies.
+Your name is 'Regurge'.`
+  }
+];
+
+// Currently unused, but could be activated using abortctrl.abort()
+const abortctrl = new AbortController();
+
 const modelconfig = {
   model: modelname,
   config: {
+    abortSignal: abortctrl.signal,
     // To curtail unforeseen cost-explosion.
     //maxOutputTokens: 131072,
 
@@ -158,7 +178,7 @@ const isJsonMode = process.argv.includes("-j");
  *                                          "parts": [{ "text": "..." }] })
  * @returns {Promise<Array<Object>>} The full text response from the model.
  */
-async function sendtoLLM(systeminstruction, contents) {
+async function* sendtoLLM(systeminstruction, contents) {
   if (!contents.length) {
     console.error(
       "Error: Contents for Gemini API must be a non-empty array."
@@ -177,22 +197,51 @@ async function sendtoLLM(systeminstruction, contents) {
   modelconfig.contents = contents;
 
   try {
-    const mresponse = await gen_ai.models.generateContent(modelconfig);
-    let fullResponse = await mresponse.candidates[0]?.content;
-
-    // FIXME There is lots of more information here
-    // GroundingUrls etc.
-
-    if (mresponse.usageMetadata && isVerboseMode)
-      console.error("\nUsage Metadata:", mresponse.usageMetadata);
-    fullResponse = fullResponse.parts;
-    contents.push({ "role": "model",
-                    "parts": fullResponse.parts });
-    if (isJsonMode) {
-      fullResponse.push({"usageMetadata":
-                 JSON.stringify(mresponse.usageMetadata, null, 2)});
+    let promptbytecount = 0;
+    for (const part of systeminstruction)
+      promptbytecount += part.text.length;
+    for (const turn of contents) {
+      for (const part of turn.parts)
+        promptbytecount += part.text.length;
     }
-    return fullResponse;
+    const respstream = await gen_ai.models.generateContentStream(modelconfig);
+    let candidatesbytecount = 0;
+    let mresponse;
+    let modelversion;
+    let meta;
+    for await (mresponse of respstream) {
+      //console.log(mresponse);
+      for (const candidate of mresponse.candidates) {
+        const content = await candidate.content;
+        // FIXME There is lots of more information here
+        // GroundingUrls etc.
+	for (const part of content.parts)
+          candidatesbytecount += part.text.length;
+      }
+      const content = mresponse.candidates[0]?.content;
+      meta = mresponse.usageMetadata;
+      modelversion = mresponse.modelVersion;
+      contents.push(content);
+      const fullResponse = content.parts;
+      if (meta.promptTokenCount) {
+        if (isVerboseMode)
+          console.info("\nUsage Metadata:", meta);
+        if (isJsonMode) {
+	  meta = {
+	    modelVersion: mresponse.modelVersion,
+	    promptTokenCount: meta.promptTokenCount,
+	    candidatesTokenCount: meta.candidatesTokenCount,
+	    promptBytesPerToken:
+	     parseFloat((promptbytecount/meta.promptTokenCount).toFixed(1)),
+	    candidatesBytesPerToken:
+	     parseFloat((candidatesbytecount/meta.candidatesTokenCount)
+	                .toFixed(1)),
+	  };
+          fullResponse.push({"usageMetadata": JSON.stringify(meta, null, 2)});
+	}
+      }
+      yield fullResponse;
+    }
   } catch (error) {
     console.error("Error calling Vertex AI Gemini API:", error);
     if (error.details)
@@ -210,10 +259,12 @@ async function sendMessageInteractive(message) {
   try {
      // Call the API with the full current chat history.
     //  Let the model implicitly handle caching of common prefixes.
-    const modelResponse = await sendtoLLM([], chatHistory);
-    for (const part of modelResponse) {
-      if (part.text != null)
-        process.stdout.write(part.text);
+    for await (const modelResponse of
+               sendtoLLM(cmdline_def_systeminstruction, chatHistory)) {
+      for (const part of modelResponse) {
+        if (part.text != null)
+          process.stdout.write(part.text);
+      }
     }
   } catch (error) {
      // If an error occurs, remove the last user message
@@ -261,6 +312,12 @@ async function startChat() { // Read all data from stdin
 	    systeminstruction = parsedInput.shift().parts;
           jsonChatHistory = parsedInput;
 	} else if (parsedInput && typeof parsedInput === "object") {
+	  if (parsedInput.abort) {
+	    // Signal abort to the running stream
+	    abortctrl.abort();
+	    // Ignore the rest of the message
+	    return;
+	  }
           // Otherwise, assume it's a single message object to append.
           jsonChatHistory.push(parsedInput);
         } else {
@@ -273,15 +330,16 @@ async function startChat() { // Read all data from stdin
 
          // Send the entire accumulated history to the LLM
         //  Let the model implicitly handle caching of common prefixes.
-        let fullResponse;
 	try {
-          fullResponse = await sendtoLLM(systeminstruction, jsonChatHistory);
+	  for await (const fullResponse of
+	             sendtoLLM(systeminstruction, jsonChatHistory)) {
+	    //  Just send back the model's response
+            process.stdout.write(JSON.stringify(fullResponse) + "\n");
+	  }
 	} catch (error) {
           console.error("Connection to LLM died.");
           process.exit(2);
 	}
-	//  Just send back the model's response
-        process.stdout.write(JSON.stringify(fullResponse) + "\n");
       } catch (error) {
 	previouslines += line;
         // Continue waiting for more input even if one line fails

@@ -29,6 +29,7 @@ vim9script
 # regurge_sendkey
 # regurge_reducekey
 # regurge_resetkey
+# regurge_abortkey
 # regurge_model
 # regurge_project
 # regurge_location
@@ -84,6 +85,8 @@ def Regurge(requested_persona: string = extname)
   const leader_reducekey: string = Getgvar("reducekey", "r")
   # Default is: \R reset the chat to system instructions only
   const leader_resetkey:  string = Getgvar("resetkey",  "R")
+  # Default is: \a abort the running response
+  const leader_abortkey:  string = Getgvar("abortkey",  "a")
   b:persona = empty(requested_persona) ?
                     Getgvar("persona", extname) : requested_persona
   const personas: dict<dict<string>> = Getgvar("personas", {})
@@ -159,6 +162,7 @@ def Regurge(requested_persona: string = extname)
   Definelkey(leader_sendkey,   "SendtoLLM()")
   Definelkey(leader_reducekey, "ResetChat(v:false)")
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
+  Definelkey(leader_abortkey,  "AbortResponse()")
 
   redraw | echo "Type your messages, send them to the LLM using " ..
                  get(g:, "mapleader", "\\") .. "s"
@@ -191,8 +195,8 @@ def Hourglass(ourbuf: number, timer_id: number): void
     return
   endif
   if bufnr("%") == ourbuf
-    redraw | echo "Waiting for LLM... " ..
-                  printf("%.0f", reltimefloat(reltime(start_time))) .. "s"
+    redraw | echo printf("Waiting for LLM ... %.0fs",
+                         reltimefloat(reltime(start_time)))
   endif
 enddef
 
@@ -317,6 +321,7 @@ def SendtoLLM(): void
   b:timer_id = timer_start(1000,
                 (id) => Hourglass(bufnr("%"), id), {"repeat": -1})
 
+  b:response_start_line = 0
   # Send the JSON history to the stdin of the regurge process
   ch_sendraw(job_getchannel(b:job_obj), json_encode(history) .. "\n")
   echohl Normal | echo "Sent message to regurge..."
@@ -327,69 +332,115 @@ enddef
 def UpdateBuffer(response: list<string>, metadata: list<string>,
                  active: bool): void
   b:partial_msg = ""	      # Received whole message, so clear it
-  # Stop the timer
-  timer_stop(b:timer_id)
+  const finalmsg = !empty(metadata)
+  if (finalmsg)
+    # Stop the timer
+    timer_stop(b:timer_id)
+  endif
 
   # Clear the status field (only visible if the buffer is active)
   redraw | echo ""
 
   setlocal modifiable
 
-  const start_line: number = line("$") + 1
-  if !empty(metadata)
-    metadata[0] = "{ \"ResponseTime\": " ..
-     printf("%.0f", reltimefloat(reltime(b:start_time)) * 1000) .. ","
+  const start_line: number = b:response_start_line == 0 ?
+                             line("$") + 1 : b:response_start_line
+  var end_meta_line: number
+  const resptime: string = printf("\"ResponseTime\": %.0f ",
+                            reltimefloat(reltime(b:start_time)) * 1000)
+  const ourbuf: number = bufnr("%")
+  if finalmsg
+    metadata[0] = "{" .. resptime .. ","
+  else
+    # Placeholder
+    extend(metadata, [ "{" .. resptime, "}" ])
   endif
-  append(line("$"), metadata)
-  const end_meta_line: number = line("$")
-  append(line("$"), response)
-  const end_line: number = line("$")
-
-  const cmdprefix: string = ":" .. start_line
-
-  def Dofoldop(cmdtail: string): void
-    execute cmdprefix .. cmdtail
-  enddef
-
-  # Create a fold for the newly added model response
-  if start_line <= end_line
-    Dofoldop("," .. end_line .. "fold")
-    Dofoldop("foldopen")
-    if start_line <= end_meta_line
-      Dofoldop("," .. end_meta_line .. "fold")
-      Dofoldop("foldclose")
+  if b:response_start_line == 0
+    append(start_line - 1, metadata)
+    end_meta_line = line("$")
+  else
+    append(start_line, metadata)
+    # Delete the first line of the old metadata
+    deletebufline(ourbuf, start_line)
+    end_meta_line = start_line + len(metadata) - 1
+    # Delete the last line of the old metadata
+    deletebufline(ourbuf, end_meta_line)
+  endif
+  var end_line: number = line("$")
+  if b:response_start_line == 0
+    if !finalmsg
+      add(response, "...")
     endif
-    Dofoldop("foldopen")
+    append(end_line, response)
+  else
+    # Insert just before the ... trailing line
+    end_line -= 1
+    append(end_line, response)
+    setline(end_line, [getline(end_line) .. getline(end_line + 1)])
+    deletebufline(ourbuf, end_line + 1)
+    if finalmsg
+      # Delete ... trailer
+      deletebufline(ourbuf, line("$"))
+    endif
   endif
+  end_line = line("$")
 
-  # Fold first-level markdown quoted code snippets
-  var lnum: number = end_meta_line
-  var lstart: number
-  while lnum < end_line
-    lnum += 1
-    const line: string = getline(lnum)
-    if line =~ '^```'
-      if line =~ '^```\w\+$'
-        lstart = lnum
-      elseif line =~ '^```\s*$'
-	execute ":" .. lstart .. "," .. lnum .. "fold"
-        if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
-	  execute ":" .. lstart .. "foldopen"
-	endif
+  if b:response_start_line == 0
+    const cmdprefix: string = ":" .. start_line
+
+    def Dofoldop(cmdtail: string): void
+      execute cmdprefix .. cmdtail
+    enddef
+
+    # Create a fold for the newly added model response
+    if start_line <= end_line
+      Dofoldop("," .. end_line .. "fold")
+      Dofoldop("foldopen")
+      if start_line <= end_meta_line
+        Dofoldop("," .. end_meta_line .. "fold")
+        Dofoldop("foldclose")
       endif
+      Dofoldop("foldopen")
     endif
-  endwhile
+  endif
+
+  if finalmsg
+    # Fold first-level markdown quoted code snippets
+    var lnum: number = end_meta_line
+    var lstart: number
+    while lnum < end_line
+      lnum += 1
+      const line: string = getline(lnum)
+      if line =~ '^```'
+        if line =~ '^```\w\+$'
+          lstart = lnum
+        elseif line =~ '^```\s*$'
+          execute ":" .. lstart .. "," .. lnum .. "fold"
+          if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
+            execute ":" .. lstart .. "foldopen"
+          endif
+        endif
+      endif
+    endwhile
+  endif
 
   if active
     Show_foldcolours()
   endif
-  # Ensure the screen updates and scrolls to the new content
-  cursor(start_line - 1, 1)
-  normal! zt
-  cursor(start_line, 1)
-  redraw
-  # Pressing a mere enter jumps to the end, new line, insert mode
-  nnoremap <buffer> <silent> <CR> <cmd>call <SID>EntertoType()<CR>
+  if b:response_start_line == 0
+    b:response_start_line = start_line
+    # Ensure the screen updates and scrolls to the new content
+    cursor(start_line - 1, 1)
+    normal! zt
+    cursor(start_line, 1)
+    redraw
+  endif
+  if finalmsg
+    # Pressing a mere enter jumps to the end, new line, insert mode
+    nnoremap <buffer> <silent> <CR> <cmd>call <SID>EntertoType()<CR>
+  else
+    setlocal nomodifiable
+  endif
 enddef
 
 def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
@@ -474,15 +525,28 @@ def ResetChat(fullreset: bool): void
   cursor(original_pos)
   # Ensure the screen updates and scrolls to the new content
   redraw
+  const ourbuf: number = bufnr("%")
   while lnum <= line("$")
     if foldlevel(lnum) != 0 || fullreset
-      deletebufline(bufnr("%"), lnum)
+      deletebufline(ourbuf, lnum)
     else
       lnum += 1
     endif
   endwhile
   if fullreset
     EntertoType()
+  endif
+enddef
+
+def AbortResponse(): void
+  # Only perform this on Regurge buffers
+  if empty(get(b:, "regurge_model", ""))
+    return
+  endif
+  const job_obj: job = get(b:, "job_obj", null_job)
+  if job_status(job_obj) == "run"
+    ch_sendraw(job_getchannel(job_obj),
+               json_encode({ "abort": 1 }) .. "\n")
   endif
 enddef
 

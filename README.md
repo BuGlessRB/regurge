@@ -33,6 +33,7 @@ When exiting insert mode, it autodetects if it can send to the LLM.
 Use `\s` to send the conversation to the LLM explicitly.
 Use `\r` to reduce the conversation to only your questions.
 Use `\R` to reset the conversation to an empty question (cheaper).
+Use `\a` to abort the running response.
 
 ## References
 
