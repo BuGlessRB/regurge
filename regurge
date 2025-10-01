@@ -243,6 +243,12 @@ async function* sendtoLLM(systeminstruction, contents) {
       yield fullResponse;
     }
   } catch (error) {
+    if (error.name === "AbortError") {
+      // Supply "final" data
+      yield ([{"usageMetadata": JSON.stringify({"abort": 1}, null, 2)}]);
+      // Silently ignore this error, since it is user requested
+      return;
+    }
     console.error("Error calling Vertex AI Gemini API:", error);
     if (error.details)
       console.error("Error details:", error.details);

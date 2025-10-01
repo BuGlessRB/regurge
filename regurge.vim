@@ -346,7 +346,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
   const start_line: number = b:response_start_line == 0 ?
                              line("$") + 1 : b:response_start_line
   var end_meta_line: number
-  const resptime: string = printf("\"ResponseTime\": %.0f ",
+  const resptime: string = printf(" \"ResponseTime\": %.0f ",
                             reltimefloat(reltime(b:start_time)) * 1000)
   const ourbuf: number = bufnr("%")
   if finalmsg
