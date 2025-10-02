@@ -274,7 +274,7 @@ def AutoSend(): void
     setlocal showmode
   endif
   const curline: number = line('.')
-  if curline == line("$") && col(".") + 1 == col("$") &&
+  if curline == line("$") && col(".") > 1 && col(".") + 1 == col("$") &&
      foldlevel(curline) == 0 && !empty(getline(curline))
     SendtoLLM()
   endif
