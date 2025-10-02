@@ -1,7 +1,7 @@
 vim9script
 
      # @license
-    # regurge.vim: Opens up a conversation buffer with an LLM through
+    # regurge.vim: Opens a conversation buffer with an LLM through
    #               the regurge cmdline tool.
   # Copyright (c) 2025 by Stephen R. van den Berg <srb@cuci.nl>
  # License: ISC OR GPL-3.0
@@ -12,7 +12,7 @@ vim9script
 # Pressing enter jumps you down, into insert mode.
 # zo opens a fold
 # zc closes a fold
-# \r deletes all folds except the first one.
+# \r reduces the buffer to only your own text.
 # \R resets the conversation.
 # \a aborts the running response.
 # Whereas the \ represents the default <leader> key.
@@ -20,26 +20,24 @@ vim9script
 # It uses folds to hide meta information and to separate user and model
 # responses.
 #
-# FIXME Whenever you undo, then redo a model response, the folds will not come
-# back.  This cannot easily be fixed, since Vim does not restore manual folds
-# at the moment.
+# FIXME When undoing then redoing a model response, folds do not restore.
+# This is a known limitation of Vim.
 #
-# Optional global variables which can be configured from
-# within .vimrc:
+# Global variables to allow for customisation from your .vimrc:
 #
-# regurge_sendkey
-# regurge_reducekey
-# regurge_resetkey
-# regurge_abortkey
+# regurge_sendkey		      # Default: s
+# regurge_reducekey		      # Default: r
+# regurge_resetkey		      # Default: R
+# regurge_abortkey		      # Default: a
 # regurge_model
 # regurge_project
 # regurge_location
 # regurge_autofold_code: number	      # More than this many lines are folded
 #
-# regurge_personas: dict<dict<any>>
-# regurge_persona
-# regurge_systeminstruction
-# regurge_config
+# regurge_personas: dict<dict<any>>   # User-defined personas
+# regurge_persona		      # Default persona
+# regurge_systeminstruction: list<string> # Default system instructions
+# regurge_config: dict<any>    	      # Default configuration
 #
 # Colour profiles used:
 # RegurgeUser
@@ -55,8 +53,9 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt, direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
- When prompted to review input: use unified-diff, show a summary of all
- issues, suppress whitespace-only-changes, suppress comment-only-changes.
+ When suggesting changes: summarise issues,
+ use unified-diff, do not show whitespace-only changes,
+ do not add comments and do not change comments.
  You are addressing a senior developer/physicist.
  Respond in the prompt-language by default.
  No preamble, politeness, compliments, apologies, disclaimers.
@@ -69,6 +68,9 @@ enddef
 const default_config: dict<any> = {
  "systemInstruction": Getgvar("systeminstruction", default_systeminstruction),
  "maxOutputTokens": 2048,
+ "temperature": 0.1,
+ "topP": 0.1,
+ "topK": 1.0,
  "frequencyPenalty": 0.4,
  "presencePenalty": 0.4,
 }
@@ -86,7 +88,7 @@ const system_personas: dict<dict<any>> = {
 
 def Regurge(requested_persona: string = extname)
   # Do not create/write b: (buffer local) variables before enew
-  enew
+  enew!
   const ourbuf: number = bufnr("%")
   b:regurge_model = default_model    # Default override
 
@@ -131,7 +133,7 @@ def Regurge(requested_persona: string = extname)
   execute "file [" .. b:persona .. " " .. ourbuf .. "]"
 
   # Define custom highlight groups for fold levels.
-  # These are default definitions. Users can override these.
+  # Default definitions; users can override in their vimrc.
   hi default RegurgeUser  ctermfg=Green guifg=Green
   hi default RegurgeModel ctermfg=NONE  guifg=NONE
   hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
@@ -174,7 +176,7 @@ def Regurge(requested_persona: string = extname)
   # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
   b:old_showmode = &showmode
   setlocal noshowmode
-  feedkeys("i")   # Enter insert mode
+  feedkeys("\<C-o>i")   # Enter insert mode
 
   def Definelkey(key: string, func: string): void
     execute "nnoremap <buffer> <silent> <Leader>" ..
@@ -191,7 +193,8 @@ def Regurge(requested_persona: string = extname)
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
   Definelkey(leader_abortkey,  "AbortResponse()")
 
-  redraw | echo "Type your messages, send them to the LLM using " ..
+  redraw | echohl Normal |
+   echo "Type then send to " .. b:persona .. " using " ..
                  get(g:, "mapleader", "\\") .. "s"
 enddef
 
@@ -223,8 +226,8 @@ def Hourglass(ourbuf: number, timer_id: number): void
     return
   endif
   if bufnr("%") == ourbuf
-    redraw | echo printf("Waiting for LLM ... %.0fs",
-                         reltimefloat(reltime(start_time)))
+    redraw | echohl Normal | echo printf("Waiting for LLM ... %.0fs",
+                                         reltimefloat(reltime(start_time)))
   endif
 enddef
 
@@ -292,10 +295,20 @@ def EntertoType(): void
   if Check_waitingforLLM()
     return
   endif
-  UnsetMagicEnter()
+  UnsetMagicEnter()	  # Only allow magic-enter once per cycle
   # Go to the last line, open a new line, and enter insert mode
   execute "normal! G"
   feedkeys("o")
+enddef
+
+def StartHourglass(): void
+  # Make this a local variable, so that repeated Hourglass() calls
+  # use the constant value from this closure
+  const ourbuf: number = bufnr("%")
+  b:start_time = reltime()
+  # Start the timer for the waiting message
+  b:timer_id = timer_start(1000,
+                (id) => Hourglass(ourbuf, id), {"repeat": -1})
 enddef
 
 def SendtoLLM(): void
@@ -344,10 +357,7 @@ def SendtoLLM(): void
   # Disable buffer modifications while waiting for the LLM response
   setlocal nomodifiable
 
-  # Start the timer for the waiting message
-  b:start_time = reltime()
-  b:timer_id = timer_start(1000,
-                (id) => Hourglass(bufnr("%"), id), {"repeat": -1})
+  StartHourglass()
 
   b:response_start_line = 0
   # Send the JSON history to the stdin of the regurge process
@@ -367,7 +377,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
   endif
 
   # Clear the status field (only visible if the buffer is active)
-  redraw | echo ""
+  redraw | echohl Normal | echo ""
 
   setlocal modifiable
 
@@ -540,9 +550,9 @@ enddef
 
 def Helperclosed(ourbuf: number): void
   timer_stop(getbufvar(ourbuf, "timer_id"))
+  setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
    echomsg extname .. " " .. ourbuf .. " helper process died."
-  # FIXME Shouldn't we set the buffer to modifiable?
 enddef
 
 def ResetChat(fullreset: bool): void
@@ -580,8 +590,15 @@ def AbortResponse(): void
   endif
   const job_obj: job = get(b:, "job_obj", null_job)
   if job_status(job_obj) == "run"
-    ch_sendraw(job_getchannel(job_obj),
-               json_encode({ "abort": 1 }) .. "\n")
+    if foldlevel(line("$")) == 0
+      job_stop(job_obj)		    # Still no output
+      setlocal modifiable
+    else
+      ch_sendraw(job_getchannel(job_obj),
+                 json_encode({ "abort": 1 }) .. "\n")
+    endif
+  else
+    setlocal modifiable
   endif
 enddef
 
