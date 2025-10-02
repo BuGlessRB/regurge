@@ -39,6 +39,7 @@ vim9script
 # regurge_personas: dict<dict<any>>
 # regurge_persona
 # regurge_systeminstruction
+# regurge_config
 #
 # Colour profiles used:
 # RegurgeUser
@@ -54,26 +55,34 @@ const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly brief, succinct, blunt, direct.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
- When prompted to review input: add a summary of all issues at the top,
- use unified-diff for suggested changes,
- suppress whitespace or comment changes unless syntactically relevant.
+ When prompted to review input: use unified-diff, show a summary of all
+ issues, suppress whitespace-only-changes, suppress comment-only-changes.
  You are addressing a senior developer/physicist.
  Respond in the prompt-language by default.
  No preamble, politeness, compliments, apologies, disclaimers.
 HERE
 
+def Getgvar(tailname: string, def: any): any
+  return get(g:, gvarprefix .. tailname, def)
+enddef
+
+const default_config: dict<any> = {
+ "systemInstruction": Getgvar("systeminstruction", default_systeminstruction),
+ "maxOutputTokens": 2048,
+ "frequencyPenalty": 0.4,
+ "presencePenalty": 0.4,
+}
+
 const system_personas: dict<dict<any>> = {
   [extname]:
-  { "systeminstruction": default_systeminstruction,
+  { "config": extend(copy(Getgvar("config", default_config)), {
+      # Add config options here
+    }),
     "model": "",      # Override model if non-empty
     "project": "",    # Override project if non-empty
     "location": "",   # Override location if non-empty
   },
 }
-
-def Getgvar(tailname: string, def: any): any
-  return get(g:, gvarprefix .. tailname, def)
-enddef
 
 def Regurge(requested_persona: string = extname)
   # Do not create/write b: (buffer local) variables before enew
@@ -95,12 +104,12 @@ def Regurge(requested_persona: string = extname)
   const profile: dict<any> =
       has_key(personas, b:persona) ? personas[b:persona]
     : has_key(system_personas, b:persona) ? system_personas[b:persona]
-    : { "systeminstruction": Getgvar("systeminstruction",
-                              system_personas[extname].systeminstruction)}
+    : system_personas[extname]
 
-  const systeminstruction: list<string> =
-    extend(profile.systeminstruction[ : ],
-           [ "Your name is '" .. b:persona .. "'."])
+  const systemconfig: dict<any> = extend(copy(profile.config),
+    { "systemInstruction":
+       extend(profile.config.systemInstruction[ : ],
+	      [ "Your name is '" .. b:persona .. "'." ]) })
 
   def Add_flags(flag: string, varname: string)
     const gval: string =
@@ -140,7 +149,23 @@ def Regurge(requested_persona: string = extname)
   setlocal nomodified
   setlocal modifiable
 
-  append(0, systeminstruction)
+  var configfold: list<string>
+  for [key, value] in items(systemconfig)
+    if type(value) == v:t_list
+      final mylist: list<string> = value[ : ]
+      add(configfold, key .. ":")
+      for i in range(len(mylist))
+        mylist[i] = substitute(mylist[i], '[`\\]', '\\&', "g")
+      endfor
+      mylist[0] = "`" .. mylist[0]
+      mylist[-1] = mylist[-1] .. "`,"
+      extend(configfold, mylist)
+    else
+      add(configfold, key .. ": " ..
+        (type(value) == v:t_string ?  value : json_encode(value)) .. ",")
+    endif
+  endfor
+  append(0, configfold)
   execute ":1,$-1fold"
   execute ":1foldclose"
   # Move cursor to the end of the buffer
@@ -156,7 +181,7 @@ def Regurge(requested_persona: string = extname)
             key .. " <cmd>call <SID>" .. func .. "<CR>"
   enddef
 
-  autocmd BufWipeout      <buffer> Stop_helperprocess(str2nr(expand("<abuf>")))
+  autocmd BufDelete          <buffer> Cleanup(str2nr(expand("<abuf>")))
   autocmd BufEnter,SafeState <buffer> Show_foldcolours()
   autocmd BufLeave           <buffer> Hide_foldcolours()
   autocmd InsertEnter        <buffer> UnsetMagicEnter()
@@ -179,8 +204,9 @@ def Start_helperprocess(ourbuf: number): number
     endif
     # Start the regurge process in JSON mode
     job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
-     "callback": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
+     "out_cb": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
      "err_cb": (channel, msg) => ErrorfromLLM(channel, msg, ourbuf),
+     "close_cb": (channel) => Helperclosed(ourbuf),
     })
     setbufvar(ourbuf, "job_obj", job_obj)
     return job_status(job_obj) == "run" ? 2 : 0
@@ -303,7 +329,7 @@ def SendtoLLM(): void
     if flevel == 0
       pastmeta = false
       Flushparts("user", lnum)        # Look for markdown marker
-    elseif flevel == 1 || pastmeta || getline(lnum) =~ '^```'
+    elseif flevel == 1 || pastmeta || getline(lnum) =~ '^\s*```'
       pastmeta = true
       Flushparts("model", lnum)
     endif
@@ -413,10 +439,10 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
     while lnum < end_line
       lnum += 1
       const line: string = getline(lnum)
-      if line =~ '^```'
-        if line =~ '^```\w\+$'
+      if line =~ '^\s*```'
+        if line =~ '^\s*```\w\+$'
           lstart = lnum
-        elseif line =~ '^```\s*$'
+        elseif line =~ '^\s*```\s*$'
           execute ":" .. lstart .. "," .. lnum .. "fold"
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
             execute ":" .. lstart .. "foldopen"
@@ -512,6 +538,13 @@ def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
   echohl ErrorMsg | echomsg extname .. " " .. ourbuf .. " " .. msg
 enddef
 
+def Helperclosed(ourbuf: number): void
+  timer_stop(getbufvar(ourbuf, "timer_id"))
+  echohl ErrorMsg |
+   echomsg extname .. " " .. ourbuf .. " helper process died."
+  # FIXME Shouldn't we set the buffer to modifiable?
+enddef
+
 def ResetChat(fullreset: bool): void
   # Only perform this on Regurge buffers
   if empty(get(b:, "regurge_model", ""))
@@ -552,9 +585,8 @@ def AbortResponse(): void
   endif
 enddef
 
-# Function to stop the regurge helper process
-def Stop_helperprocess(ourbuf: number)
-  const job_obj: job = getbufvar(ourbuf, "job_obj")
+def Cleanup(ourbuf: number)
+  const job_obj: job = getbufvar(ourbuf, "job_obj", null_job)
   if job_status(job_obj) == "run"
     job_stop(job_obj)
   endif

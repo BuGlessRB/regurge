@@ -48,7 +48,7 @@ Your name is 'Regurge'.`
 
 var abortctrl;
 
-const modelconfig = {
+const masterconfig = {
   model: modelname,
   config: {
     // To curtail unforeseen cost-explosion.
@@ -66,8 +66,8 @@ const modelconfig = {
     seed: 42,
 
     // Style points, keep it neutral: do not enforce.
-    frequencyPenalty: 0.5, // -2.0 .. 2.0
-    presencePenalty: 0.5,  // -2.0 .. 2.0
+    frequencyPenalty: 0.4, // -2.0 .. 2.0
+    presencePenalty: 0.4,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 
      thinkingConfig: {
@@ -177,7 +177,7 @@ const isJsonMode = process.argv.includes("-j");
  *                                          "parts": [{ "text": "..." }] })
  * @returns {Promise<Array<Object>>} The full text response from the model.
  */
-async function* sendtoLLM(systeminstruction, contents) {
+async function* sendtoLLM(systemconfig, contents) {
    // Create a new control on every response, otherwise we get warnings
   //  about too many (not-yet-garbage collected) listeners
   abortctrl = new AbortController();
@@ -191,17 +191,14 @@ async function* sendtoLLM(systeminstruction, contents) {
     process.exit(1);
   }
 
-  const s_i = "systemInstruction";
-  if (systeminstruction.length)
-    modelconfig.config[s_i] = { parts: systeminstruction }
-  else
-    delete(modelconfig.config, s_i);
+  const modelconfig = Object.assign({}, masterconfig);
+  Object.assign(modelconfig.config, systemconfig);
   modelconfig.contents = contents;
   modelconfig.config.abortSignal = abortctrl.signal;
 
   try {
     let promptbytecount = 0;
-    for (const part of systeminstruction)
+    for (const part of modelconfig.config.systemInstruction)
       promptbytecount += part.text.length;
     for (const turn of contents) {
       for (const part of turn.parts)
@@ -269,7 +266,8 @@ async function sendMessageInteractive(message) {
      // Call the API with the full current chat history.
     //  Let the model implicitly handle caching of common prefixes.
     for await (const modelResponse of
-               sendtoLLM(cmdline_def_systeminstruction, chatHistory)) {
+               sendtoLLM({systemInstruction: cmdline_def_systeminstruction},
+		chatHistory)) {
       for (const part of modelResponse) {
         if (part.text != null)
           process.stdout.write(part.text);
@@ -299,11 +297,13 @@ async function startChat() {   // Read all data from stdin
 \t-v\tVerbose LLM output`);
   }
 
+  var systemconfig = {}
+
   if (isJsonMode) {
       // JSON Mode: Expect JSON objects on stdin.  Arrays replace history.
      //  Objects append to history.
     let jsonChatHistory = [];
-    let systeminstruction = [];
+    let systemconfig = [];
     let previouslines = "";
 
      // FIXME This line based parsing breaks down if multiple separate
@@ -317,8 +317,23 @@ async function startChat() {   // Read all data from stdin
 	//  conversation history.
         if (Array.isArray(parsedInput)) {
 	  // Convert an initial model role into system instructions
-	  if (parsedInput.length && parsedInput[0].role === "model")
-	    systeminstruction = parsedInput.shift().parts;
+	  if (parsedInput.length && parsedInput[0].role === "model") {
+	    let accu = "";
+	    for (const part of parsedInput.shift().parts)
+	      accu += part.text || "";
+	    try {
+	      systemconfig = eval("({" + accu + "})");
+	      if (!Array.isArray(systemconfig.systemInstruction))
+	        systemconfig.systemInstruction
+		 = [systemconfig.systemInstruction];
+	      const parts = [];
+	      for (const part of systemconfig.systemInstruction)
+	        parts.push({text: part});
+	      systemconfig.systemInstruction = parts;
+	    } catch (error) {
+	      console.error(error);
+	    }
+	  }
           jsonChatHistory = parsedInput;
 	} else if (parsedInput && typeof parsedInput === "object") {
 	  if (parsedInput.abort) {
@@ -341,7 +356,7 @@ async function startChat() {   // Read all data from stdin
         //  Let the model implicitly handle caching of common prefixes.
 	try {
 	  for await (const fullResponse of
-	             sendtoLLM(systeminstruction, jsonChatHistory)) {
+	             sendtoLLM(systemconfig, jsonChatHistory)) {
 	    // Just send back the model's response
             process.stdout.write(JSON.stringify(fullResponse) + "\n");
 	  }
