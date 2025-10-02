@@ -50,7 +50,7 @@ const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_autofold_code: number = 8
 const default_systeminstruction: list<string> =<< trim HERE
- Be exceedingly brief, succinct, blunt, direct.
+ Be exceedingly concise, blunt.
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
  When suggesting changes: summarise issues,
@@ -89,7 +89,30 @@ const system_personas: dict<dict<any>> = {
 def Regurge(requested_persona: string = extname)
   # Do not create/write b: (buffer local) variables before enew
   enew!
+  setlocal noswapfile
+  setlocal noundofile
+  setlocal wrap
+  setlocal linebreak
+  setlocal noautoindent nosmartindent nocindent
+  setlocal indentkeys=
+  setlocal indentexpr=
+  setlocal filetype=markdown
+  setlocal foldmethod=manual
+  setlocal buftype=nofile
+  setlocal nomodified
+  setlocal modifiable
+
+  # Define custom highlight groups for fold levels.
+  # Default definitions; users can override in their vimrc.
+  hi default RegurgeUser  ctermfg=Green guifg=Green
+  hi default RegurgeModel ctermfg=NONE  guifg=NONE
+  hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
+
   const ourbuf: number = bufnr("%")
+  b:persona = empty(requested_persona) ?
+                    Getgvar("persona", extname) : requested_persona
+  execute "file [" .. b:persona .. " " .. ourbuf .. "]"
+
   b:regurge_model = default_model    # Default override
 
   # Default is: \s to send to LLM
@@ -100,8 +123,6 @@ def Regurge(requested_persona: string = extname)
   const leader_resetkey:  string = Getgvar("resetkey",  "R")
   # Default is: \a abort the running response
   const leader_abortkey:  string = Getgvar("abortkey",  "a")
-  b:persona = empty(requested_persona) ?
-                    Getgvar("persona", extname) : requested_persona
   const personas: dict<dict<string>> = Getgvar("personas", {})
   const profile: dict<any> =
       has_key(personas, b:persona) ? personas[b:persona]
@@ -121,35 +142,6 @@ def Regurge(requested_persona: string = extname)
       extend(b:helpercmd, [flag, gval])
     endif
   enddef
-
-  b:helpercmd = ["regurge", "-j"]
-  Add_flags("-M", "model")    # Default set in regurge
-  Add_flags("-L", "location") # Default via environment (see regurge)
-  Add_flags("-P", "project")  # Default via environment (see regurge)
-
-  b:job_obj = null_job      # Init it, in case the buffer is wiped right away
-  #Start_helperprocess(ourbuf)  # For debugging only
-
-  execute "file [" .. b:persona .. " " .. ourbuf .. "]"
-
-  # Define custom highlight groups for fold levels.
-  # Default definitions; users can override in their vimrc.
-  hi default RegurgeUser  ctermfg=Green guifg=Green
-  hi default RegurgeModel ctermfg=NONE  guifg=NONE
-  hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
-
-  setlocal noswapfile
-  setlocal noundofile
-  setlocal wrap
-  setlocal linebreak
-  setlocal noautoindent nosmartindent nocindent
-  setlocal indentkeys=
-  setlocal indentexpr=
-  setlocal filetype=markdown
-  setlocal foldmethod=manual
-  setlocal buftype=nofile
-  setlocal nomodified
-  setlocal modifiable
 
   var configfold: list<string>
   for [key, value] in items(systemconfig)
@@ -182,6 +174,14 @@ def Regurge(requested_persona: string = extname)
     execute "nnoremap <buffer> <silent> <Leader>" ..
             key .. " <cmd>call <SID>" .. func .. "<CR>"
   enddef
+
+  b:helpercmd = ["regurge", "-j"]
+  Add_flags("-M", "model")    # Default set in regurge
+  Add_flags("-L", "location") # Default via environment (see regurge)
+  Add_flags("-P", "project")  # Default via environment (see regurge)
+
+  b:job_obj = null_job      # Init it, in case the buffer is wiped right away
+  #Start_helperprocess(ourbuf)  # For debugging only
 
   autocmd BufDelete          <buffer> Cleanup(str2nr(expand("<abuf>")))
   autocmd BufEnter,SafeState <buffer> Show_foldcolours()
