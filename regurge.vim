@@ -177,6 +177,7 @@ def Regurge(requested_persona: string = pluginname)
         (type(value) == v:t_string ? value : json_encode(value))))
     endif
   endfor
+  # Fill the first fold with the config and system instructions
   append(0, configfold)
   execute ":1,$-1fold"
   execute ":1foldclose"
@@ -290,8 +291,8 @@ def AutoSend(): void
     setlocal showmode
   endif
   const curline: number = line('.')
-  if curline == line("$") && col(".") > 1 && col(".") + 1 == col("$") &&
-     foldlevel(curline) == 0 && !empty(getline(curline))
+  if curline == line("$") && col(".") > 1 && col(".") + 1 == col("$")
+     && foldlevel(curline) == 0 && !empty(getline(curline))
     SendMessageToLLM()
   endif
 enddef
@@ -362,8 +363,8 @@ def SendMessageToLLM(): void
   endfor
   Flushparts("", 0)
 
-  if empty(history) || history[-1].role != "user" ||
-     empty(trim(history[-1].parts[0].text))
+  if empty(history) || history[-1].role != "user"
+     || empty(trim(history[-1].parts[0].text))
     return    # Nothing to send
   endif
 
@@ -490,7 +491,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     # Pressing a mere enter jumps to the end, new line, insert mode
     nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotToInsertModeAtEnd()<CR>
   else
-    # Disable buffer modifications while waiting for the LLM response
+    # Disable buffer modifications again while waiting for more LLM responses
     setlocal nomodifiable
   endif
 enddef
