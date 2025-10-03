@@ -4,9 +4,10 @@ regurge is a commandline tool to interact with an LLM.
 regurge.vim is the LLM interface AGI (As God Intended).
 
 regurge has the following features:
-- Connects to VertexAI.
-- Disables censoring, sets model temperature to zero, answers are
-  fully reproducible, Google Search grounding enabled.
+- Connects to VertexAI using the latest @google/genai interface.
+- Disables censoring.
+- Answers are mostly reproducible.
+- Google Search grounding enabled.
 - JSON mode.
 
 regurge.vim supports:
@@ -19,6 +20,8 @@ regurge.vim supports:
 - Automatic caching of past history (lowers cost).
 - Supports naming the process.
 - Supports providing/altering system instructions in the first fold.
+- All configuration constants are tweakable in the first fold.
+- Session cost accounting.
 
 ## Requirements
 
@@ -28,12 +31,14 @@ Vim9
 ## Basic usage
 
 Simply drop regurge in your path and load regurge.vim.
-Start the conversation using `:R [persona]`
-When exiting insert mode, it autodetects if it can send to the LLM.
-Use `\s` to send the conversation to the LLM explicitly.
-Use `\r` to reduce the conversation to only your questions.
-Use `\R` to reset the conversation to an empty question (cheaper).
-Use `\a` to abort the running response.
+- Start the conversation using `:R [persona]`
+- When exiting insert mode, it autodetects if it can send to the LLM.
+- Use `\s` to send the conversation to the LLM explicitly.
+- Use `\r` to reduce the conversation to only your questions.
+- Use `\R` to reset the conversation to an empty question (cheaper).
+- Use `\a` to abort the running response.
+- Use zo to open folds.
+- Use zc to close folds.
 
 ## References
 
