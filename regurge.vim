@@ -490,6 +490,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     # Pressing a mere enter jumps to the end, new line, insert mode
     nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotToInsertModeAtEnd()<CR>
   else
+    # Disable buffer modifications while waiting for the LLM response
     setlocal nomodifiable
   endif
 enddef
