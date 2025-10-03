@@ -194,17 +194,17 @@ def Regurge(requested_persona: string = pluginname)
   Add_flags("-P", "project")  # Default via environment (see regurge)
 
   b:job_obj = null_job      # Init it, in case the buffer is wiped right away
-  #Start_helperprocess(ourbuf)  # For debugging only
+  #StartRegurgeProcess(ourbuf)  # For debugging only
 
   autocmd BufDelete             <buffer> Cleanup(str2nr(expand("<abuf>")))
-  autocmd BufWinEnter,SafeState <buffer> Show_foldcolours()
-  autocmd BufWinLeave           <buffer> Hide_foldcolours()
-  autocmd InsertEnter           <buffer> UnsetMagicEnter()
+  autocmd BufWinEnter,SafeState <buffer> ApplyFoldHighlighting()
+  autocmd BufWinLeave           <buffer> ClearFoldHighlighting()
+  autocmd InsertEnter           <buffer> DisableMagicEnter()
   autocmd InsertLeave           <buffer> AutoSend()
-  Definelkey(leader_sendkey,   "SendtoLLM()")
+  Definelkey(leader_sendkey,   "SendMessageToLLM()")
   Definelkey(leader_reducekey, "ResetChat(v:false)")
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
-  Definelkey(leader_abortkey,  "AbortResponse()")
+  Definelkey(leader_abortkey,  "CancelLLMResponse()")
 
   redraw | echohl Normal |
    echo printf("Type then send to %s using %s%s",
@@ -212,7 +212,7 @@ def Regurge(requested_persona: string = pluginname)
 enddef
 
 # Returns: 0: failed 1: running 2: restarted
-def Start_helperprocess(ourbuf: number): number
+def StartRegurgeProcess(ourbuf: number): number
   var job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) != "run"
     if job_status(job_obj) == "dead"
@@ -220,9 +220,9 @@ def Start_helperprocess(ourbuf: number): number
     endif
     # Start the regurge process in JSON mode
     job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
-     "out_cb": (channel, msg) => MsgfromLLM(channel, msg, ourbuf),
-     "err_cb": (channel, msg) => ErrorfromLLM(channel, msg, ourbuf),
-     "close_cb": (channel) => Helperclosed(ourbuf),
+     "out_cb": (channel, msg) => HandleLLMOutput(channel, msg, ourbuf),
+     "err_cb": (channel, msg) => HandleLLMError(channel, msg, ourbuf),
+     "close_cb": (channel) => HandleRegurgeClose(ourbuf),
     })
     setbufvar(ourbuf, "job_obj", job_obj)
     return job_status(job_obj) == "run" ? 2 : 0
@@ -230,7 +230,7 @@ def Start_helperprocess(ourbuf: number): number
   return 1
 enddef
 
-def Hourglass(ourbuf: number, timer_id: number): void
+def ShowHourglass(ourbuf: number, timer_id: number): void
   # Check if the buffer still exists and is a regurgechat buffer
   # This is important because the timer might fire after the buffer is wiped out
   const start_time: any = getbufvar(ourbuf, "start_time", "")
@@ -246,7 +246,7 @@ enddef
 
 # FIXME The fold-level-dependent highlighting has window scope, so it needs
 # to be toggled on and off, depending on the buffer being in view
-def Hide_foldcolours(): void
+def ClearFoldHighlighting(): void
   const fold_match_ids: list<number> = get(w:, "regurge_fold_match_ids", [])
   # Window-local list to store match IDs for dynamic highlighting.
   for id in fold_match_ids
@@ -256,8 +256,8 @@ def Hide_foldcolours(): void
 enddef
 
 # Function to apply fold-level-dependent highlighting to visible lines.
-def Show_foldcolours(): void
-  Hide_foldcolours()
+def ApplyFoldHighlighting(): void
+  ClearFoldHighlighting()
 
   final linesperlevel: list<list<number>> = [[], [], []]
 
@@ -276,14 +276,14 @@ def Show_foldcolours(): void
   ColourFold("RegurgeMeta", 2)
 enddef
 
-def UnsetMagicEnter(): void
+def DisableMagicEnter(): void
   if !empty(maparg("<CR>"))
     nunmap <buffer> <CR>
   endif
 enddef
 
 def AutoSend(): void
-  if Check_waitingforLLM()
+  if IsWaitingForResponse()
     return
   endif
   if b:old_showmode
@@ -292,11 +292,11 @@ def AutoSend(): void
   const curline: number = line('.')
   if curline == line("$") && col(".") > 1 && col(".") + 1 == col("$") &&
      foldlevel(curline) == 0 && !empty(getline(curline))
-    SendtoLLM()
+    SendMessageToLLM()
   endif
 enddef
 
-def Check_waitingforLLM(): number
+def IsWaitingForResponse(): number
   if !&modifiable
     echohl WarningMsg | echo "Please wait for the current response..."
     return 1
@@ -304,33 +304,33 @@ def Check_waitingforLLM(): number
   return 0
 enddef
 
-def EntertoType(): void
-  if Check_waitingforLLM()
+def GotToInsertModeAtEnd(): void
+  if IsWaitingForResponse()
     return
   endif
-  UnsetMagicEnter()	  # Only allow magic-enter once per cycle
+  DisableMagicEnter()	  # Only allow magic-enter once per cycle
   # Go to the last line, open a new line, and enter insert mode
   execute "normal! G"
   feedkeys("o")
 enddef
 
-def StartHourglass(): void
-  # Make this a local variable, so that repeated Hourglass() calls
+def StartShowHourglass(): void
+  # Make this a local variable, so that repeated ShowHourglass() calls
   # use the constant value from this closure
   const ourbuf: number = bufnr("%")
   b:start_time = reltime()
   # Start the timer for the waiting message
   b:timer_id = timer_start(1000,
-                (id) => Hourglass(ourbuf, id), {"repeat": -1})
+                (id) => ShowHourglass(ourbuf, id), {"repeat": -1})
 enddef
 
-def SendtoLLM(): void
-  if Start_helperprocess(bufnr("%")) == 0
+def SendMessageToLLM(): void
+  if StartRegurgeProcess(bufnr("%")) == 0
     echohl ErrorMsg | echo "Connection to regurge failed, retry later."
     return
   endif
   # Function to send the current user message and entire history to regurge
-  if Check_waitingforLLM()
+  if IsWaitingForResponse()
     return
   endif
 
@@ -370,7 +370,7 @@ def SendtoLLM(): void
   # Disable buffer modifications while waiting for the LLM response
   setlocal nomodifiable
 
-  StartHourglass()
+  StartShowHourglass()
 
   b:response_start_line = 0
   # Send the JSON history to the stdin of the regurge process
@@ -380,7 +380,7 @@ def SendtoLLM(): void
   setlocal nomodified
 enddef
 
-def UpdateBuffer(response: list<string>, metadata: list<string>,
+def AppendLLMResponse(response: list<string>, metadata: list<string>,
                  active: bool): void
   b:partial_msg = ""	      # Received whole message, so clear it
   const finalmsg = !empty(metadata)
@@ -476,7 +476,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
   endif
 
   if active
-    Show_foldcolours()
+    ApplyFoldHighlighting()
   endif
   if b:response_start_line == 0
     b:response_start_line = start_line
@@ -488,13 +488,13 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
   endif
   if finalmsg
     # Pressing a mere enter jumps to the end, new line, insert mode
-    nnoremap <buffer> <silent> <CR> <cmd>call <SID>EntertoType()<CR>
+    nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotToInsertModeAtEnd()<CR>
   else
     setlocal nomodifiable
   endif
 enddef
 
-def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
+def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stdout from the regurge process
   if !bufexists(ourbuf)   # guard against race conditions
     return
@@ -510,7 +510,7 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
     endif
   catch /E491:/
     setbufvar(ourbuf, "partial_msg", fullmsg)
-    if Start_helperprocess(ourbuf) == 1
+    if StartRegurgeProcess(ourbuf) == 1
       return               # Wait for a complete msg
     else
       echohl ErrorMsg | echo "Connection to regurge failed, retry later."
@@ -532,14 +532,14 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   const original_buf: number = bufnr("%")
 
   if ourbuf == original_buf
-    UpdateBuffer(model_response_text, model_metadata, true)
+    AppendLLMResponse(model_response_text, model_metadata, true)
   else
     const original_pos: list<number> = getcurpos()[1 : ]
     const noa_b: string = "noautocmd buffer "
     try
       # Switch to the target buffer to perform updates.
       execute noa_b .. ourbuf
-      UpdateBuffer(model_response_text, model_metadata, false)
+      AppendLLMResponse(model_response_text, model_metadata, false)
     catch
     finally
       # Always try to return to the buffer the user was in
@@ -557,13 +557,13 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
   endif
 enddef
 
-def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
+def HandleLLMError(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stderr from the regurge process
   # Must be specified, otherwise vim will choke on stderr output
   echohl ErrorMsg | echomsg printf("%s %d %s", pluginname, ourbuf, msg)
 enddef
 
-def Helperclosed(ourbuf: number): void
+def HandleRegurgeClose(ourbuf: number): void
   timer_stop(getbufvar(ourbuf, "timer_id", 0))
   setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
@@ -594,11 +594,11 @@ def ResetChat(fullreset: bool): void
     endif
   endwhile
   if fullreset
-    EntertoType()
+    GotToInsertModeAtEnd()
   endif
 enddef
 
-def AbortResponse(): void
+def CancelLLMResponse(): void
   # Only perform this on Regurge buffers
   if empty(get(b:, "regurge_model", ""))
     return
