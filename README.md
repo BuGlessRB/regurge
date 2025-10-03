@@ -6,11 +6,13 @@ regurge.vim is the LLM interface AGI (As God Intended).
 regurge has the following features:
 - Connects to VertexAI using the latest @google/genai interface.
 - Disables censoring.
-- Answers are mostly reproducible.
+- Responses are mostly reproducible.
 - Google Search grounding enabled.
 - JSON mode.
+- Streaming responses (even in JSON mode).
 
 regurge.vim supports:
+- Streaming responses.
 - Multiple conversations (one per buffer).
 - Fully editable history, to mold the scope the LLM sees.
 - Full power of vim available to copy/paste from/into LLM conversations.
@@ -37,8 +39,8 @@ Simply drop regurge in your path and load regurge.vim.
 - Use `\r` to reduce the conversation to only your questions.
 - Use `\R` to reset the conversation to an empty question (cheaper).
 - Use `\a` to abort the running response.
-- Use zo to open folds.
-- Use zc to close folds.
+- Use `zo` to open folds.
+- Use `zc` to close folds.
 
 ## References
 
