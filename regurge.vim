@@ -76,10 +76,10 @@ const default_config: dict<any> = {
  "frequencyPenalty": 0.5,
  "presencePenalty": 0.3,
  "candidateCount": 1, 
- "thinkingConfig": {                                                                                                               
-   "includeThoughts": false,                                                                                                        
-   "thinkingBudget": 0,                                                                                                             
- },                                                                                                                               
+ "thinkingConfig": {
+   "includeThoughts": false,
+   "thinkingBudget": 0,
+ },
  # There are more options to be included here, check regurge.
  # Putting the options here allows direct overrides over the
  # defaults already preset in regurge.
