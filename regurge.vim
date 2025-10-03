@@ -106,10 +106,10 @@ def Regurge(requested_persona: string = pluginname)
   setlocal noautoindent nosmartindent nocindent
   setlocal indentkeys=
   setlocal indentexpr=
-  setlocal foldmethod=manual
-  setlocal buftype=nofile
   setlocal nomodified
   setlocal modifiable
+  setlocal foldmethod=manual
+  setlocal buftype=nofile
   # Setting filetype should be last, since it triggers a FileType event
   setlocal filetype=markdown
 
