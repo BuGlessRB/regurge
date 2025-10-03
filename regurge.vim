@@ -54,8 +54,7 @@ const default_systeminstruction: list<string> =<< trim HERE
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
  When suggesting changes: summarise issues,
- use unified-diff, do not show whitespace-only changes,
- do not add comments and do not change comments.
+ use unified-diff without any changes in comments/whitespace.
  You are addressing a senior developer/physicist.
  Respond in the prompt-language by default.
  No preamble, politeness, compliments, apologies, disclaimers.
@@ -69,10 +68,10 @@ const default_config: dict<any> = {
  "systemInstruction": Getgvar("systeminstruction", default_systeminstruction),
  "maxOutputTokens": 2048,
  "temperature": 0.1,
- "topP": 0.1,
+ "topP": 0.95,
  "topK": 1.0,
- "frequencyPenalty": 0.4,
- "presencePenalty": 0.4,
+ "frequencyPenalty": 0.5,
+ "presencePenalty": 0.3,
 }
 
 const system_personas: dict<dict<any>> = {
@@ -88,7 +87,7 @@ const system_personas: dict<dict<any>> = {
 
 def Regurge(requested_persona: string = extname)
   # Do not create/write b: (buffer local) variables before enew
-  enew!
+  enew
   setlocal noswapfile
   setlocal noundofile
   setlocal wrap
@@ -96,11 +95,12 @@ def Regurge(requested_persona: string = extname)
   setlocal noautoindent nosmartindent nocindent
   setlocal indentkeys=
   setlocal indentexpr=
-  setlocal filetype=markdown
   setlocal foldmethod=manual
   setlocal buftype=nofile
   setlocal nomodified
   setlocal modifiable
+  # Setting filetype should be last, since it triggers a FileType event
+  setlocal filetype=markdown
 
   # Define custom highlight groups for fold levels.
   # Default definitions; users can override in their vimrc.
@@ -132,6 +132,7 @@ def Regurge(requested_persona: string = extname)
   const systemconfig: dict<any> = extend(copy(profile.config),
     { "systemInstruction":
        extend(profile.config.systemInstruction[ : ],
+	      # Extend system instructions with persona name
 	      [ "Your name is '" .. b:persona .. "'." ]) })
 
   def Add_flags(flag: string, varname: string)
@@ -141,6 +142,11 @@ def Regurge(requested_persona: string = extname)
     if !empty(gval)
       extend(b:helpercmd, [flag, gval])
     endif
+  enddef
+
+  def Definelkey(key: string, func: string): void
+    execute "nnoremap <buffer> <silent> <Leader>" ..
+            key .. " <cmd>call <SID>" .. func .. "<CR>"
   enddef
 
   var configfold: list<string>
@@ -170,11 +176,6 @@ def Regurge(requested_persona: string = extname)
   setlocal noshowmode
   feedkeys("\<C-o>i")   # Enter insert mode
 
-  def Definelkey(key: string, func: string): void
-    execute "nnoremap <buffer> <silent> <Leader>" ..
-            key .. " <cmd>call <SID>" .. func .. "<CR>"
-  enddef
-
   b:helpercmd = ["regurge", "-j"]
   Add_flags("-M", "model")    # Default set in regurge
   Add_flags("-L", "location") # Default via environment (see regurge)
@@ -183,11 +184,11 @@ def Regurge(requested_persona: string = extname)
   b:job_obj = null_job      # Init it, in case the buffer is wiped right away
   #Start_helperprocess(ourbuf)  # For debugging only
 
-  autocmd BufDelete          <buffer> Cleanup(str2nr(expand("<abuf>")))
-  autocmd BufEnter,SafeState <buffer> Show_foldcolours()
-  autocmd BufLeave           <buffer> Hide_foldcolours()
-  autocmd InsertEnter        <buffer> UnsetMagicEnter()
-  autocmd InsertLeave        <buffer> AutoSend()
+  autocmd BufDelete             <buffer> Cleanup(str2nr(expand("<abuf>")))
+  autocmd BufWinEnter,SafeState <buffer> Show_foldcolours()
+  autocmd BufWinLeave           <buffer> Hide_foldcolours()
+  autocmd InsertEnter           <buffer> UnsetMagicEnter()
+  autocmd InsertLeave           <buffer> AutoSend()
   Definelkey(leader_sendkey,   "SendtoLLM()")
   Definelkey(leader_reducekey, "ResetChat(v:false)")
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
@@ -549,7 +550,7 @@ def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
 enddef
 
 def Helperclosed(ourbuf: number): void
-  timer_stop(getbufvar(ourbuf, "timer_id"))
+  timer_stop(getbufvar(ourbuf, "timer_id", 0))
   setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
    echomsg extname .. " " .. ourbuf .. " helper process died."

@@ -249,7 +249,8 @@ async function* sendtoLLM(systemconfig, contents) {
   } catch (error) {
     if (error.name === "AbortError") {
         // Supply "final" data
-      yield ([{"usageMetadata": JSON.stringify({"abort": 1}, null, 2)}]);
+      yield ([{"usageMetadata":
+	       JSON.stringify({finishReason: "ABORT"}, null, 2)}]);
       //   Silently ignore this error, since it is user requested
       return;
     }
