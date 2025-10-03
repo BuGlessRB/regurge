@@ -56,7 +56,7 @@ const default_systeminstruction: list<string> =<< trim HERE
  When suggesting changes: summarise issues,
  use unified-diff focus on functional changes
  without any changes in comments/whitespace.
- You are addressing a senior developer/physicist.
+ You are addressing a fellow senior developer/physicist.
  Respond in the prompt-language by default.
  No preamble, politeness, compliments, apologies, disclaimers.
 HERE
@@ -126,9 +126,9 @@ def Regurge(requested_persona: string = extname)
   const leader_abortkey:  string = Getgvar("abortkey",  "a")
   const personas: dict<dict<string>> = Getgvar("personas", {})
   const profile: dict<any> =
-      has_key(personas, b:persona) ? personas[b:persona]
-    : has_key(system_personas, b:persona) ? system_personas[b:persona]
-    : system_personas[extname]
+     has_key(personas, b:persona)        ? personas[b:persona]
+   : has_key(system_personas, b:persona) ? system_personas[b:persona]
+                                         : system_personas[extname]
 
   const systemconfig: dict<any> = extend(copy(profile.config),
     { "systemInstruction":
@@ -137,9 +137,9 @@ def Regurge(requested_persona: string = extname)
 	      [ printf("Your name is '%s'.", b:persona) ]) })
 
   def Add_flags(flag: string, varname: string)
-    const gval: string =
-      has_key(profile, varname) && !empty(profile[varname]) ?
-       profile[varname] : Getgvar(varname, "")
+    const gval: string = has_key(profile, varname) && !empty(profile[varname])
+                         ? profile[varname]
+                         : Getgvar(varname, "")
     if !empty(gval)
       extend(b:helpercmd, [flag, gval])
     endif
@@ -164,7 +164,7 @@ def Regurge(requested_persona: string = extname)
       extend(configfold, mylist)
     else
       add(configfold, printf("%s: %s,", key,
-        (type(value) == v:t_string ?  value : json_encode(value))))
+        (type(value) == v:t_string ? value : json_encode(value))))
     endif
   endfor
   append(0, configfold)
