@@ -12,12 +12,12 @@
 // to authenticate to the API.  There are fallbacks in place which drop
 // back down to "gcloud auth application-default login".
 
-//var modelname = "gemini-flash-lite-latest";
-var modelname = "gemini-2.5-flash-lite";
+//let modelname = "gemini-flash-lite-latest";
+let modelname = "gemini-2.5-flash-lite";
 
-var project = process.env.GOOGLE_CLOUD_PROJECT
+let project = process.env.GOOGLE_CLOUD_PROJECT
            || process.env.VERTEXAI_PROJECT;
-var location = process.env.GOOGLE_CLOUD_LOCATION
+let location = process.env.GOOGLE_CLOUD_LOCATION
             || process.env.VERTEXAI_LOCATION;
 
 const readline = require("readline");
@@ -33,20 +33,21 @@ const {
  //  regurge only uses this in interactive mode.
 //   In JSON mode the systemInstruction is passed as data.
 const cmdline_def_systeminstruction = [
-  { text: `Be exceedingly brief, succinct, blunt, direct.
-Articulate doubt if unsure.
-Answer in staccato keywords by default.
-When prompted to review input: add a summary of all issues at the top,
-use unified-diff for suggested changes,
-suppress whitespace or comment changes unless syntactically relevant.
-You are addressing a senior developer/physicist.
-Respond in the prompt-language by default.
-No preamble, politeness, compliments, apologies, disclaimers.
+  { text: `
+ Be exceedingly concise, blunt.
+ Articulate doubt if unsure.
+ Answer in staccato keywords by default.
+ When suggesting changes: summarise issues,
+ use unified-diff focus on functional changes
+ without any changes in comments/whitespace.
+ You are addressing a fellow senior developer/physicist.
+ Respond in the prompt-language by default.
+ No preamble, politeness, compliments, apologies, disclaimers.
 Your name is 'Regurge'.`
   }
 ];
 
-var abortctrl;
+let abortctrl;
 
 const masterconfig = {
   model: modelname,
@@ -61,13 +62,13 @@ const masterconfig = {
 
     // The following settings make the model's responses deterministic.
     temperature: 0.1,
-    topP: 0.1,
+    topP: 0.95,
     topK: 1.0,
     seed: 42,
 
     // Style points, keep it neutral: do not enforce.
-    frequencyPenalty: 0.4, // -2.0 .. 2.0
-    presencePenalty: 0.4,  // -2.0 .. 2.0
+    frequencyPenalty: 0.5, // -2.0 .. 2.0
+    presencePenalty: 0.3,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 
      thinkingConfig: {
@@ -301,8 +302,6 @@ async function startChat() {   // Read all data from stdin
 \t-M\tVertexAI-model (default: ` + modelname + `)
 \t-v\tVerbose LLM output`);
   }
-
-  var systemconfig = {}
 
   if (isJsonMode) {
       // JSON Mode: Expect JSON objects on stdin.  Arrays replace history.

@@ -73,6 +73,11 @@ const default_config: dict<any> = {
  "topK": 1.0,
  "frequencyPenalty": 0.5,
  "presencePenalty": 0.3,
+ "candidateCount": 1, 
+ "thinkingConfig": {                                                                                                               
+   "includeThoughts": false,                                                                                                        
+   "thinkingBudget": 0,                                                                                                             
+ },                                                                                                                               
 }
 
 const system_personas: dict<dict<any>> = {
