@@ -67,7 +67,7 @@ const masterconfig = {
     seed: 42,
 
     // Style points, keep it neutral: do not enforce.
-    frequencyPenalty: 0.5, // -2.0 .. 2.0
+    frequencyPenalty: 0.6, // -2.0 .. 2.0
     presencePenalty: 0.3,  // -2.0 .. 2.0
     enableAffectiveDialog: false,
 

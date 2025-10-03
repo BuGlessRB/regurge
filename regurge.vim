@@ -75,7 +75,7 @@ const default_config: dict<any> = {
  "temperature": 0.1,
  "topP": 0.95,
  "topK": 1,
- "frequencyPenalty": 0.5,
+ "frequencyPenalty": 0.6,
  "presencePenalty": 0.3,
  "candidateCount": 1, 
  "thinkingConfig": {
@@ -200,7 +200,7 @@ def Regurge(requested_persona: string = pluginname)
 
   autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
   autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
-  autocmd WinLeave             <buffer> ClearFoldHighlighting()
+  autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
   autocmd InsertEnter          <buffer> DisableMagicEnter()
   autocmd InsertLeave          <buffer> AutoSend()
 
@@ -413,6 +413,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     append(start_line - 1, metadata)
     end_meta_line = line("$")
   else
+    # Insert after the first line, but before the last line of the fold
     append(start_line, metadata)
     # Delete the first line of the old metadata
     deletebufline(ourbuf, start_line)
