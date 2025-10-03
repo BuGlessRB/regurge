@@ -53,13 +53,13 @@ const default_autofold_code: number = 8
 # of wasted output tokens.
 const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly concise, blunt.
- Articulate doubt if unsure.
- Answer in staccato keywords by default.
- When suggesting changes: summarise issues,
+ If unsure, state doubt.
+ Answer in staccato keywords.
+ When suggesting changes: summarize issues,
  use unified-diff focus on functional changes
  without any changes in comments/whitespace.
  You are addressing a fellow senior developer/physicist.
- Respond in the prompt-language by default.
+ Answer in the prompt-language.
  No preamble, politeness, compliments, apologies, disclaimers.
 HERE
 
@@ -196,14 +196,14 @@ def Regurge(requested_persona: string = pluginname)
   Add_flags("-L", "location") # Default via environment (see regurge)
   Add_flags("-P", "project")  # Default via environment (see regurge)
 
-  b:job_obj = null_job      # Init it, in case the buffer is wiped right away
-  #StartRegurgeProcess(ourbuf)  # For debugging only
+  b:job_obj = null_job        # Init it, in case the buffer is wiped right away
 
-  autocmd BufDelete             <buffer> Cleanup(str2nr(expand("<abuf>")))
-  autocmd BufWinEnter,SafeState <buffer> ApplyFoldHighlighting()
-  autocmd BufWinLeave           <buffer> ClearFoldHighlighting()
-  autocmd InsertEnter           <buffer> DisableMagicEnter()
-  autocmd InsertLeave           <buffer> AutoSend()
+  autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
+  autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
+  autocmd WinLeave             <buffer> ClearFoldHighlighting()
+  autocmd InsertEnter          <buffer> DisableMagicEnter()
+  autocmd InsertLeave          <buffer> AutoSend()
+
   Definelkey(leader_sendkey,   "SendMessageToLLM()")
   Definelkey(leader_reducekey, "ResetChat(v:false)")
   Definelkey(leader_resetkey,  "ResetChat(v:true)")
