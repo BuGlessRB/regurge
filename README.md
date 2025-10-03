@@ -39,5 +39,5 @@ Use `\a` to abort the running response.
 
 Card-carrying member of the `zerodeps` movement.
 
-Sadly, however, I find that I need a dependency on `@google-cloud/vertexai`
+Sadly, however, I find that I need a dependency on `@google/genai`
 in the regurge script.
