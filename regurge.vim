@@ -54,7 +54,8 @@ const default_systeminstruction: list<string> =<< trim HERE
  Articulate doubt if unsure.
  Answer in staccato keywords by default.
  When suggesting changes: summarise issues,
- use unified-diff without any changes in comments/whitespace.
+ use unified-diff focus on functional changes
+ without any changes in comments/whitespace.
  You are addressing a senior developer/physicist.
  Respond in the prompt-language by default.
  No preamble, politeness, compliments, apologies, disclaimers.
@@ -111,7 +112,7 @@ def Regurge(requested_persona: string = extname)
   const ourbuf: number = bufnr("%")
   b:persona = empty(requested_persona) ?
                     Getgvar("persona", extname) : requested_persona
-  execute "file [" .. b:persona .. " " .. ourbuf .. "]"
+  execute printf("file [%s %d]", b:persona, ourbuf)
 
   b:regurge_model = default_model    # Default override
 
@@ -133,7 +134,7 @@ def Regurge(requested_persona: string = extname)
     { "systemInstruction":
        extend(profile.config.systemInstruction[ : ],
 	      # Extend system instructions with persona name
-	      [ "Your name is '" .. b:persona .. "'." ]) })
+	      [ printf("Your name is '%s'.", b:persona) ]) })
 
   def Add_flags(flag: string, varname: string)
     const gval: string =
@@ -145,8 +146,9 @@ def Regurge(requested_persona: string = extname)
   enddef
 
   def Definelkey(key: string, func: string): void
-    execute "nnoremap <buffer> <silent> <Leader>" ..
-            key .. " <cmd>call <SID>" .. func .. "<CR>"
+    execute printf(
+             "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
+             key, func)
   enddef
 
   var configfold: list<string>
@@ -161,8 +163,8 @@ def Regurge(requested_persona: string = extname)
       mylist[-1] = mylist[-1] .. "`,"
       extend(configfold, mylist)
     else
-      add(configfold, key .. ": " ..
-        (type(value) == v:t_string ?  value : json_encode(value)) .. ",")
+      add(configfold, printf("%s: %s,", key,
+        (type(value) == v:t_string ?  value : json_encode(value))))
     endif
   endfor
   append(0, configfold)
@@ -195,8 +197,8 @@ def Regurge(requested_persona: string = extname)
   Definelkey(leader_abortkey,  "AbortResponse()")
 
   redraw | echohl Normal |
-   echo "Type then send to " .. b:persona .. " using " ..
-                 get(g:, "mapleader", "\\") .. "s"
+   echo printf("Type then send to %s using %s%s",
+               b:persona, get(g:, "mapleader", "\\"), leader_sendkey)
 enddef
 
 # Returns: 0: failed 1: running 2: restarted
@@ -204,7 +206,7 @@ def Start_helperprocess(ourbuf: number): number
   var job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) != "run"
     if job_status(job_obj) == "dead"
-      echomsg "regurge process [" .. ourbuf .. "] died, restarting it..."
+      echomsg printf("regurge process [%d] died, restarting it...", ourbuf)
     endif
     # Start the regurge process in JSON mode
     job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
@@ -389,7 +391,7 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
                             reltimefloat(reltime(b:start_time)) * 1000)
   const ourbuf: number = bufnr("%")
   if finalmsg
-    metadata[0] = "{" .. resptime .. ","
+    metadata[0] = printf("{%s,", resptime)
   else
     # Placeholder
     extend(metadata, [ "{" .. resptime, "}" ])
@@ -433,10 +435,10 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
 
     # Create a fold for the newly added model response
     if start_line <= end_line
-      Dofoldop("," .. end_line .. "fold")
+      Dofoldop(printf(",%dfold", end_line))
       Dofoldop("foldopen")
       if start_line <= end_meta_line
-        Dofoldop("," .. end_meta_line .. "fold")
+        Dofoldop(printf(",%dfold", end_meta_line))
         Dofoldop("foldclose")
       endif
       Dofoldop("foldopen")
@@ -454,9 +456,9 @@ def UpdateBuffer(response: list<string>, metadata: list<string>,
         if line =~ '^\s*```\w\+$'
           lstart = lnum
         elseif line =~ '^\s*```\s*$'
-          execute ":" .. lstart .. "," .. lnum .. "fold"
+          execute printf(":%d,%dfold", lstart, lnum)
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
-            execute ":" .. lstart .. "foldopen"
+            execute printf(":%dfoldopen", lstart)
           endif
         endif
       endif
@@ -538,22 +540,24 @@ def MsgfromLLM(curchan: channel, msg: string, ourbuf: number): void
 
   if !empty(model_metadata)
     # This echo will appear in the original buffer
-    echohl Normal | echo getbufvar(ourbuf, "persona") .. " " .. ourbuf ..
-      ", ResponseTime: " ..  json_decode(join(model_metadata)).ResponseTime
+    echohl Normal |
+     echo printf("%s %d, ResponseTime: %d",
+                 getbufvar(ourbuf, "persona"), ourbuf,
+                 json_decode(join(model_metadata)).ResponseTime)
   endif
 enddef
 
 def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stderr from the regurge process
   # Must be specified, otherwise vim will choke on stderr output
-  echohl ErrorMsg | echomsg extname .. " " .. ourbuf .. " " .. msg
+  echohl ErrorMsg | echomsg printf("%s %d %s", extname, ourbuf, msg)
 enddef
 
 def Helperclosed(ourbuf: number): void
   timer_stop(getbufvar(ourbuf, "timer_id", 0))
   setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
-   echomsg extname .. " " .. ourbuf .. " helper process died."
+   echomsg printf("%s %d helper process died.", extname, ourbuf)
 enddef
 
 def ResetChat(fullreset: bool): void
