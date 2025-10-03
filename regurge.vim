@@ -122,8 +122,8 @@ def Regurge(requested_persona: string = pluginname)
   hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
 
   const ourbuf: number = bufnr("%")
-  b:persona = empty(requested_persona) ?
-                    Getgvar("persona", pluginname) : requested_persona
+  b:persona = empty(requested_persona)
+            ? Getgvar("persona", pluginname) : requested_persona
   execute printf("file [%s %d]", b:persona, ourbuf)
 
   b:regurge_model = default_model    # Default override
@@ -471,7 +471,11 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
           lstart = lnum
         elseif line =~ '^\s*```\s*$'
           execute printf(":%d,%dfold", lstart, lnum)
+	  # Open small source snippets
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
+	     # Except for the Google internal search-script snippets
+	     && (lnum - lstart != 2
+	         || getline(lstart + 1) !~ '^print(google_search\.search(')
             execute printf(":%dfoldopen", lstart)
           endif
         endif
