@@ -69,7 +69,9 @@ enddef
 
 const default_config: dict<any> = {
  "systemInstruction": Getgvar("systeminstruction", default_systeminstruction),
- "maxOutputTokens": 2048,
+ # The gemini 2.5 allows up to 131072 output tokens
+ # Limit runaway cost
+ "maxOutputTokens": 8192,
  "temperature": 0.1,
  "topP": 0.95,
  "topK": 1.0,
