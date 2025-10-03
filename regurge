@@ -63,7 +63,7 @@ const masterconfig = {
     // The following settings make the model's responses deterministic.
     temperature: 0.1,
     topP: 0.95,
-    topK: 1.0,
+    topK: 1,
     seed: 42,
 
     // Style points, keep it neutral: do not enforce.

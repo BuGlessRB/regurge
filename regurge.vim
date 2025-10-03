@@ -74,7 +74,7 @@ const default_config: dict<any> = {
  "maxOutputTokens": 8192,
  "temperature": 0.1,
  "topP": 0.95,
- "topK": 1.0,
+ "topK": 1,
  "frequencyPenalty": 0.5,
  "presencePenalty": 0.3,
  "candidateCount": 1, 
