@@ -187,6 +187,8 @@ def Regurge(requested_persona: string = pluginname)
   setlocal noshowmode
   feedkeys("\<C-o>i")   # Enter insert mode
 
+  # The b:regurge_helper variable is also used as a marker to check if we
+  # are looking at a Regurge buffer.
   b:regurge_helper = ["regurge", "-j"]
 
   def Add_flags(flag: string, varname: string, def: string): string
