@@ -47,7 +47,7 @@ vim9script
 #const default_model: string = "gemini-2.5-flash-lite"
 const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
-const extname: string = "Regurge"
+const pluginname: string = "Regurge"
 const default_autofold_code: number = 8
 # The following system instructions tend to result in a minimum
 # of wasted output tokens.
@@ -86,17 +86,17 @@ const default_config: dict<any> = {
 }
 
 const system_personas: dict<dict<any>> = {
-  [extname]:
+  [pluginname]:
   { "config": extend(copy(Getgvar("config", default_config)), {
       # Add overriding options for this persona here
     }),
-    "model": "",      # Override model if non-empty
-    "project": "",    # Override project if non-empty
-    "location": "",   # Override location if non-empty
+    "model": "",      # Override default model if non-empty
+    "project": "",    # Override default project if non-empty
+    "location": "",   # Override default location if non-empty
   },
 }
 
-def Regurge(requested_persona: string = extname)
+def Regurge(requested_persona: string = pluginname)
   # Do not create/write b: (buffer local) variables before enew
   enew
   setlocal noswapfile
@@ -121,7 +121,7 @@ def Regurge(requested_persona: string = extname)
 
   const ourbuf: number = bufnr("%")
   b:persona = empty(requested_persona) ?
-                    Getgvar("persona", extname) : requested_persona
+                    Getgvar("persona", pluginname) : requested_persona
   execute printf("file [%s %d]", b:persona, ourbuf)
 
   b:regurge_model = default_model    # Default override
@@ -138,7 +138,7 @@ def Regurge(requested_persona: string = extname)
   const profile: dict<any> =
      has_key(personas, b:persona)        ? personas[b:persona]
    : has_key(system_personas, b:persona) ? system_personas[b:persona]
-                                         : system_personas[extname]
+                                         : system_personas[pluginname]
 
   const systemconfig: dict<any> = extend(copy(profile.config),
     { "systemInstruction":
@@ -560,14 +560,14 @@ enddef
 def ErrorfromLLM(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stderr from the regurge process
   # Must be specified, otherwise vim will choke on stderr output
-  echohl ErrorMsg | echomsg printf("%s %d %s", extname, ourbuf, msg)
+  echohl ErrorMsg | echomsg printf("%s %d %s", pluginname, ourbuf, msg)
 enddef
 
 def Helperclosed(ourbuf: number): void
   timer_stop(getbufvar(ourbuf, "timer_id", 0))
   setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
-   echomsg printf("%s %d helper process died.", extname, ourbuf)
+   echomsg printf("%s %d helper process died.", pluginname, ourbuf)
 enddef
 
 def ResetChat(fullreset: bool): void
