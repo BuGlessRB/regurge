@@ -44,8 +44,11 @@ vim9script
 # RegurgeModel
 # RegurgeMeta
 
-#const default_model: string = "gemini-2.5-flash-lite"
-const default_model: string = "gemini-flash-lite-latest"
+# Global variable that stores total cost in $
+# since start of vim: g:regurge_cost
+
+const default_model: string = "gemini-2.5-flash-lite"
+#const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
 const pluginname: string = "Regurge"
 const default_autofold_code: number = 8
@@ -62,6 +65,16 @@ const default_systeminstruction: list<string> =<< trim HERE
  Answer in the prompt-language.
  No preamble, politeness, compliments, apologies, disclaimers.
 HERE
+
+const prices: dict<list<float>> = {
+                # [$/M tokens input, $/M tokens output]
+  "gemini-flash-lite-latest": [0.15,  0.60],
+  "gemini-2.5-flash-lite":    [0.15,  0.60],
+  "gemini-flash-latest":      [0.30,  2.50],
+  "gemini-2.5-flash":         [0.30,  2.50],
+  "gemini-pro-latest":        [2.50, 10.00],
+  "gemini-2.5-pro":           [2.50, 10.00],
+}
 
 def Getgvar(tailname: string, def: any): any
   return get(g:, gvarprefix .. tailname, def)
@@ -126,8 +139,6 @@ def Regurge(requested_persona: string = pluginname)
             ? Getgvar("persona", pluginname) : requested_persona
   execute printf("file [%s %d]", b:persona, ourbuf)
 
-  b:regurge_model = default_model    # Default override
-
   # Default is: \s to send to LLM
   const leader_sendkey:   string = Getgvar("sendkey",   "s")
   # Default is: \r reduce the chat to only the user input
@@ -147,21 +158,6 @@ def Regurge(requested_persona: string = pluginname)
        extend(profile.config.systemInstruction[ : ],
 	      # Extend system instructions with persona name
 	      [ printf("Your name is '%s'.", b:persona) ]) })
-
-  def Add_flags(flag: string, varname: string)
-    const gval: string = has_key(profile, varname) && !empty(profile[varname])
-                         ? profile[varname]
-                         : Getgvar(varname, "")
-    if !empty(gval)
-      extend(b:helpercmd, [flag, gval])
-    endif
-  enddef
-
-  def Definelkey(key: string, func: string): void
-    execute printf(
-             "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
-             key, func)
-  enddef
 
   var configfold: list<string>
   for [key, value] in items(systemconfig)
@@ -191,18 +187,39 @@ def Regurge(requested_persona: string = pluginname)
   setlocal noshowmode
   feedkeys("\<C-o>i")   # Enter insert mode
 
-  b:helpercmd = ["regurge", "-j"]
-  Add_flags("-M", "model")    # Default set in regurge
-  Add_flags("-L", "location") # Default via environment (see regurge)
-  Add_flags("-P", "project")  # Default via environment (see regurge)
+  b:regurge_helper = ["regurge", "-j"]
+
+  def Add_flags(flag: string, varname: string, def: string): string
+    const gval: string = has_key(profile, varname) && !empty(profile[varname])
+                         ? profile[varname]
+                         : Getgvar(varname, def)
+    if !empty(gval)
+      extend(b:regurge_helper, [flag, gval])
+    endif
+    return gval
+  enddef
+
+  const model: string = Add_flags("-M", "model", default_model)
+  Add_flags("-L", "location", "") # Default via environment (see regurge)
+  Add_flags("-P", "project", "")  # Default via environment (see regurge)
 
   b:job_obj = null_job        # Init it, in case the buffer is wiped right away
+
+  # If we cannot find the model in our pricelist, provide the most expensive
+  # guess instead
+  b:modelprices = has_key(prices, model) ? prices[model] : [75.0, 150.0]
 
   autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
   autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
   autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
   autocmd InsertEnter          <buffer> DisableMagicEnter()
   autocmd InsertLeave          <buffer> AutoSend()
+
+  def Definelkey(key: string, func: string): void
+    execute printf(
+             "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
+             key, func)
+  enddef
 
   Definelkey(leader_sendkey,   "SendMessageToLLM()")
   Definelkey(leader_reducekey, "ResetChat(v:false)")
@@ -222,7 +239,7 @@ def StartRegurgeProcess(ourbuf: number): number
       echomsg printf("regurge process [%d] died, restarting it...", ourbuf)
     endif
     # Start the regurge process in JSON mode
-    job_obj = job_start(getbufvar(ourbuf, "helpercmd"), {
+    job_obj = job_start(getbufvar(ourbuf, "regurge_helper"), {
      "out_cb": (channel, msg) => HandleLLMOutput(channel, msg, ourbuf),
      "err_cb": (channel, msg) => HandleLLMError(channel, msg, ourbuf),
      "close_cb": (channel) => HandleRegurgeClose(ourbuf),
@@ -558,11 +575,26 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
   endif
 
   if !empty(model_metadata)
+    const struct_metadata: dict<any> = json_decode(join(model_metadata))
+    const modelprices: list<float> = getbufvar(ourbuf, "modelprices")
+
+    def CalcTokenCost(tokenname: string, costoffset: number): float
+      return has_key(struct_metadata, tokenname)
+           ? struct_metadata[tokenname] * modelprices[costoffset] * 0.000001
+           : 0.0
+    enddef
+
+    const cost_inc: float = CalcTokenCost("promptTokenCount",     0)
+                          + CalcTokenCost("candidatesTokenCount", 1)
+    const cost_old: float = get(g:, "regurge_cost", 0.0)
+    g:regurge_cost = cost_old + cost_inc
+
     # This echo will appear in the original buffer
     echohl Normal |
-     echo printf("%s %d, ResponseTime: %d",
+     echo printf("%s %d, ResponseTime: %d  $%.5f + $%.5f = $%.02f",
                  getbufvar(ourbuf, "persona"), ourbuf,
-                 json_decode(join(model_metadata)).ResponseTime)
+                 struct_metadata.ResponseTime,
+		 cost_old, cost_inc, g:regurge_cost)
   endif
 enddef
 
@@ -581,7 +613,7 @@ enddef
 
 def ResetChat(fullreset: bool): void
   # Only perform this on Regurge buffers
-  if empty(get(b:, "regurge_model", ""))
+  if empty(get(b:, "regurge_helper", ""))
     return
   endif
   var lnum: number = 1
@@ -609,7 +641,7 @@ enddef
 
 def CancelLLMResponse(): void
   # Only perform this on Regurge buffers
-  if empty(get(b:, "regurge_model", ""))
+  if empty(get(b:, "regurge_helper", ""))
     return
   endif
   const job_obj: job = get(b:, "job_obj", null_job)
