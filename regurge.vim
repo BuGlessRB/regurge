@@ -577,7 +577,7 @@ def ResetChat(fullreset: bool): void
   endif
   var lnum: number = 1
   while foldlevel(lnum) == 1
-    lnum += 1
+    lnum += 1                 # Preserve system instructions
   endwhile
   const original_pos: list<number> = getcurpos()[1 : ]
   cursor(lnum, 1)
@@ -590,7 +590,7 @@ def ResetChat(fullreset: bool): void
     if foldlevel(lnum) != 0 || fullreset
       deletebufline(ourbuf, lnum)
     else
-      lnum += 1
+      lnum += 1               # Preserve user input (at most)
     endif
   endwhile
   if fullreset
