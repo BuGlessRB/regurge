@@ -49,6 +49,8 @@ const default_model: string = "gemini-flash-lite-latest"
 const gvarprefix: string = "regurge_"
 const extname: string = "Regurge"
 const default_autofold_code: number = 8
+# The following system instructions tend to result in a minimum
+# of wasted output tokens.
 const default_systeminstruction: list<string> =<< trim HERE
  Be exceedingly concise, blunt.
  Articulate doubt if unsure.
@@ -78,12 +80,15 @@ const default_config: dict<any> = {
    "includeThoughts": false,                                                                                                        
    "thinkingBudget": 0,                                                                                                             
  },                                                                                                                               
+ # There are more options to be included here, check regurge.
+ # Putting the options here allows direct overrides over the
+ # defaults already preset in regurge.
 }
 
 const system_personas: dict<dict<any>> = {
   [extname]:
   { "config": extend(copy(Getgvar("config", default_config)), {
-      # Add config options here
+      # Add overriding options for this persona here
     }),
     "model": "",      # Override model if non-empty
     "project": "",    # Override project if non-empty
