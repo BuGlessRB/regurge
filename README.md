@@ -46,5 +46,5 @@ Simply drop regurge in your path and load regurge.vim.
 
 Card-carrying member of the `zerodeps` movement.
 
-Sadly, however, I find that I need a dependency on `@google/genai`
+Sadly, however, there sadly is a dependency on `@google/genai`
 in the regurge script.

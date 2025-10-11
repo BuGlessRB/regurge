@@ -10,8 +10,8 @@ vim9script
 # Start using :R [persona] or :Regurge [persona], then send using \s
 # It starts in insert mode.  When you leave insert mode it autosends.
 # Pressing enter jumps you down, into insert mode.
-# zo opens a fold
-# zc closes a fold
+# zo opens a fold.
+# zc closes a fold.
 # \r reduces the buffer to only your own text.
 # \R resets the conversation.
 # \a aborts the running response.
@@ -32,12 +32,12 @@ vim9script
 # regurge_model
 # regurge_project
 # regurge_location
-# regurge_autofold_code: number	      # More than this many lines are folded
+# regurge_autofold_code: number	      # More than this many lines are folded.
 #
-# regurge_personas: dict<dict<any>>   # User-defined personas
-# regurge_persona		      # Default persona
-# regurge_systeminstruction: list<string> # Default system instructions
-# regurge_config: dict<any>    	      # Default configuration
+# regurge_personas: dict<dict<any>>   # User-defined personas.
+# regurge_persona		      # Default persona.
+# regurge_systeminstruction: list<string> # Default system instructions.
+# regurge_config: dict<any>    	      # Default configuration.
 #
 # Colour profiles used:
 # RegurgeUser
@@ -60,10 +60,10 @@ const default_systeminstruction: list<string> =<< trim HERE
  Answer in staccato keywords.
  When suggesting changes: summarize issues,
  use unified-diff focus on functional changes
- without any changes in comments/whitespace.
+ preserving comments/whitespace.
  You are addressing a fellow senior developer/physicist.
  Answer in the prompt-language.
- No preamble, politeness, compliments, apologies, disclaimers.
+ No preamble, politeness, disclaimers.
 HERE
 
 const prices: dict<list<float>> = {
@@ -76,14 +76,15 @@ const prices: dict<list<float>> = {
   "gemini-2.5-pro":           [2.50, 10.00],
 }
 
-def Getgvar(tailname: string, def: any): any
-  return get(g:, gvarprefix .. tailname, def)
+def Getgvar(tailname: string, defval: any): any
+  return get(g:, gvarprefix .. tailname, defval)
 enddef
 
 const default_config: dict<any> = {
+ "model": Getgvar("model", default_model),
  "systemInstruction": Getgvar("systeminstruction", default_systeminstruction),
- # The gemini 2.5 allows up to 131072 output tokens
- # Limit runaway cost
+ # The gemini 2.5 allows up to 131072 output tokens.
+ # Limit runaway cost.
  "maxOutputTokens": 8192,
  "temperature": 0.1,
  "topP": 0.95,
@@ -98,21 +99,22 @@ const default_config: dict<any> = {
  # There are more options to be included here, check regurge.
  # Putting the options here allows direct overrides over the
  # defaults already preset in regurge.
+ # As an exception to the rule, you can even override the
+ # model with a "model": entry in here.
 }
 
 const system_personas: dict<dict<any>> = {
   [pluginname]:
   { "config": extend(copy(Getgvar("config", default_config)), {
-      # Add overriding options for this persona here
+      # Add overriding options for this persona here.
     }),
-    "model": "",      # Override default model if non-empty
-    "project": "",    # Override default project if non-empty
-    "location": "",   # Override default location if non-empty
+    "project": "",    # Override default project if non-empty.
+    "location": "",   # Override default location if non-empty.
   },
 }
 
 def Regurge(requested_persona: string = pluginname)
-  # Do not create/write b: (buffer local) variables before enew
+  # Do not create/write b: (buffer local) variables before enew.
   enew
   setlocal noswapfile
   setlocal noundofile
@@ -125,7 +127,7 @@ def Regurge(requested_persona: string = pluginname)
   setlocal modifiable
   setlocal foldmethod=manual
   setlocal buftype=nofile
-  # Setting filetype should be last, since it triggers a FileType event
+  # Setting filetype should be last, since it triggers a FileType event.
   setlocal filetype=markdown
 
   # Define custom highlight groups for fold levels.
@@ -139,13 +141,13 @@ def Regurge(requested_persona: string = pluginname)
             ? Getgvar("persona", pluginname) : requested_persona
   execute printf("file [%s %d]", b:persona, ourbuf)
 
-  # Default is: \s to send to LLM
+  # Default is: \s to send to LLM.
   const leader_sendkey:   string = Getgvar("sendkey",   "s")
-  # Default is: \r reduce the chat to only the user input
+  # Default is: \r reduce the chat to only the user input.
   const leader_reducekey: string = Getgvar("reducekey", "r")
-  # Default is: \R reset the chat to system instructions only
+  # Default is: \R reset the chat to system instructions only.
   const leader_resetkey:  string = Getgvar("resetkey",  "R")
-  # Default is: \a abort the running response
+  # Default is: \a abort the running response.
   const leader_abortkey:  string = Getgvar("abortkey",  "a")
   const personas: dict<dict<string>> = Getgvar("personas", {})
   const profile: dict<any> =
@@ -156,8 +158,12 @@ def Regurge(requested_persona: string = pluginname)
   const systemconfig: dict<any> = extend(copy(profile.config),
     { "systemInstruction":
        extend(profile.config.systemInstruction[ : ],
-	      # Extend system instructions with persona name
+	      # Extend system instructions with persona name.
 	      [ printf("Your name is '%s'.", b:persona) ]) })
+
+  if has_key(systemconfig, "model")
+    b:model = systemconfig.model
+  endif
 
   var configfold: list<string>
   for [key, value] in items(systemconfig)
@@ -172,50 +178,47 @@ def Regurge(requested_persona: string = pluginname)
       extend(configfold, mylist)
     else
       add(configfold, printf("%s: %s,", key,
-        (type(value) == v:t_string ? value : json_encode(value))))
+        (type(value) == v:t_string
+         && key != "model" ? value : json_encode(value))))
     endif
   endfor
-  # Fill the first fold with the config and system instructions
+  # Fill the first fold with the config and system instructions.
   append(0, configfold)
   execute ":1,$-1fold"
   execute ":1foldclose"
-  # Move cursor to the end of the buffer
+  # Move cursor to the end of the buffer.
   normal! G
 
   # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
   b:old_showmode = &showmode
   setlocal noshowmode
-  feedkeys("\<C-o>i")   # Enter insert mode
+  feedkeys("\<C-o>i")   # Enter insert mode.
 
   # The b:regurge_helper variable is also used as a marker to check if we
   # are looking at a Regurge buffer.
   b:regurge_helper = ["regurge", "-j"]
 
-  def Add_flags(flag: string, varname: string, def: string): string
+  def Add_flags(flag: string, varname: string, defval: string): string
     const gval: string = has_key(profile, varname) && !empty(profile[varname])
                          ? profile[varname]
-                         : Getgvar(varname, def)
+                         : Getgvar(varname, defval)
     if !empty(gval)
       extend(b:regurge_helper, [flag, gval])
     endif
     return gval
   enddef
 
-  const model: string = Add_flags("-M", "model", default_model)
-  Add_flags("-L", "location", "") # Default via environment (see regurge)
-  Add_flags("-P", "project", "")  # Default via environment (see regurge)
+  Add_flags("-L", "location", "") # Default via environment (see regurge).
+  Add_flags("-P", "project", "")  # Default via environment (see regurge).
 
-  b:job_obj = null_job        # Init it, in case the buffer is wiped right away
-
-  # If we cannot find the model in our pricelist, provide the most expensive
-  # guess instead
-  b:modelprices = has_key(prices, model) ? prices[model] : [75.0, 150.0]
+  b:job_obj = null_job        # Init it, in case the buffer is wiped right away.
 
   autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
   autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
   autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
   autocmd InsertEnter          <buffer> DisableMagicEnter()
   autocmd InsertLeave          <buffer> AutoSend()
+  autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
 
   def Definelkey(key: string, func: string): void
     execute printf(
@@ -233,14 +236,14 @@ def Regurge(requested_persona: string = pluginname)
                b:persona, get(g:, "mapleader", "\\"), leader_sendkey)
 enddef
 
-# Returns: 0: failed 1: running 2: restarted
+# Returns: 0: failed 1: running 2: restarted.
 def StartRegurgeProcess(ourbuf: number): number
   var job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) != "run"
     if job_status(job_obj) == "dead"
       echomsg printf("regurge process [%d] died, restarting it...", ourbuf)
     endif
-    # Start the regurge process in JSON mode
+    # Start the regurge process in JSON mode.
     job_obj = job_start(getbufvar(ourbuf, "regurge_helper"), {
      "out_cb": (channel, msg) => HandleLLMOutput(channel, msg, ourbuf),
      "err_cb": (channel, msg) => HandleLLMError(channel, msg, ourbuf),
@@ -253,8 +256,9 @@ def StartRegurgeProcess(ourbuf: number): number
 enddef
 
 def ShowHourglass(ourbuf: number, timer_id: number): void
-  # Check if the buffer still exists and is a regurgechat buffer
-  # This is important because the timer might fire after the buffer is wiped out
+  # Check if the buffer still exists and is a regurgechat buffer.
+  # This is important because the timer might fire after the buffer
+  # has been wiped out.
   const start_time: any = getbufvar(ourbuf, "start_time", "")
   if !bufexists(ourbuf) || empty(start_time)
     timer_stop(timer_id)
@@ -267,7 +271,7 @@ def ShowHourglass(ourbuf: number, timer_id: number): void
 enddef
 
 # FIXME The fold-level-dependent highlighting has window scope, so it needs
-# to be toggled on and off, depending on the buffer being in view
+# to be toggled on and off, depending on the buffer being in view.
 def ClearFoldHighlighting(): void
   const fold_match_ids: list<number> = get(w:, "regurge_fold_match_ids", [])
   # Window-local list to store match IDs for dynamic highlighting.
@@ -330,18 +334,18 @@ def GotToInsertModeAtEnd(): void
   if IsWaitingForResponse()
     return
   endif
-  DisableMagicEnter()	  # Only allow magic-enter once per cycle
-  # Go to the last line, open a new line, and enter insert mode
+  DisableMagicEnter()	  # Only allow magic-enter once per cycle.
+  # Go to the last line, open a new line, and enter insert mode.
   execute "normal! G"
   feedkeys("o")
 enddef
 
 def StartShowHourglass(): void
   # Make this a local variable, so that repeated ShowHourglass() calls
-  # use the constant value from this closure
+  # use the constant value from this closure.
   const ourbuf: number = bufnr("%")
   b:start_time = reltime()
-  # Start the timer for the waiting message
+  # Start the timer for the waiting message.
   b:timer_id = timer_start(1000,
                 (id) => ShowHourglass(ourbuf, id), {"repeat": -1})
 enddef
@@ -351,12 +355,12 @@ def SendMessageToLLM(): void
     echohl ErrorMsg | echo "Connection to regurge failed, retry later."
     return
   endif
-  # Function to send the current user message and entire history to regurge
+  # Function to send the current user message and entire history to regurge.
   if IsWaitingForResponse()
     return
   endif
 
-  # Parse the entire buffer to get the complete chat history
+  # Parse the entire buffer to get the complete chat history.
   var history: list<dict<any>>
   var text_lines: list<string>
   var role: string
@@ -376,7 +380,7 @@ def SendMessageToLLM(): void
     const flevel: number = foldlevel(lnum)
     if flevel == 0
       pastmeta = false
-      Flushparts("user", lnum)        # Look for markdown marker
+      Flushparts("user", lnum)        # Look for markdown marker.
     elseif flevel == 1 || pastmeta || getline(lnum) =~ '^\s*```'
       pastmeta = true
       Flushparts("model", lnum)
@@ -386,16 +390,24 @@ def SendMessageToLLM(): void
 
   if empty(history) || history[-1].role != "user"
      || empty(trim(history[-1].parts[0].text))
-    return    # Nothing to send
+    return    # Nothing to send.
   endif
 
-  # Disable buffer modifications while waiting for the LLM response
+  if (history[0].role == "model")
+    const modelinfold =
+     matchstr(history[0].parts[0].text, '\s\s*model:\s*"\zs[^"]\+\ze",')
+    if !empty(modelinfold)
+      b:model = modelinfold
+    endif
+  endif
+
+  # Disable buffer modifications while waiting for the LLM response.
   setlocal nomodifiable
 
   StartShowHourglass()
 
   b:response_start_line = 0
-  # Send the JSON history to the stdin of the regurge process
+  # Send the JSON history to the stdin of the regurge process.
   ch_sendraw(job_getchannel(b:job_obj), json_encode(history) .. "\n")
   echohl Normal | echo "Sent message to regurge..."
 
@@ -404,14 +416,13 @@ enddef
 
 def AppendLLMResponse(response: list<string>, metadata: list<string>,
                  active: bool): void
-  b:partial_msg = ""	      # Received whole message, so clear it
+  b:partial_msg = ""	      # Received whole message, so clear it.
   const finalmsg = !empty(metadata)
   if (finalmsg)
-    # Stop the timer
     timer_stop(b:timer_id)
   endif
 
-  # Clear the status field (only visible if the buffer is active)
+  # Clear the status field (only visible if the buffer is active).
   redraw | echohl Normal | echo ""
 
   setlocal modifiable
@@ -425,19 +436,19 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   if finalmsg
     metadata[0] = printf("{%s,", resptime)
   else
-    # Placeholder
+    # Placeholder.
     extend(metadata, [ "{" .. resptime, "}" ])
   endif
   if b:response_start_line == 0
     append(start_line - 1, metadata)
     end_meta_line = line("$")
   else
-    # Insert after the first line, but before the last line of the fold
+    # Insert after the first line, but before the last line of the fold.
     append(start_line, metadata)
-    # Delete the first line of the old metadata
+    # Delete the first line of the old metadata.
     deletebufline(ourbuf, start_line)
     end_meta_line = start_line + len(metadata) - 1
-    # Delete the last line of the old metadata
+    # Delete the last line of the old metadata.
     deletebufline(ourbuf, end_meta_line)
   endif
   var end_line: number = line("$")
@@ -447,13 +458,13 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     endif
     append(end_line, response)
   else
-    # Insert just before the ... trailing line
+    # Insert just before the ... trailing line.
     end_line -= 1
     append(end_line, response)
     setline(end_line, [getline(end_line) .. getline(end_line + 1)])
     deletebufline(ourbuf, end_line + 1)
     if finalmsg
-      # Delete ... trailer
+      # Delete ... trailer.
       deletebufline(ourbuf, line("$"))
     endif
   endif
@@ -466,7 +477,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
       execute cmdprefix .. cmdtail
     enddef
 
-    # Create a fold for the newly added model response
+    # Create a fold for the newly added model response.
     if start_line <= end_line
       Dofoldop(printf(",%dfold", end_line))
       Dofoldop("foldopen")
@@ -479,7 +490,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   endif
 
   if finalmsg
-    # Fold first-level markdown quoted code snippets
+    # Fold first-level markdown quoted code snippets.
     var lnum: number = end_meta_line
     var lstart: number
     while lnum < end_line
@@ -490,9 +501,9 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
           lstart = lnum
         elseif line =~ '^\s*```\s*$'
           execute printf(":%d,%dfold", lstart, lnum)
-	  # Open small source snippets
+	  # Open small source snippets.
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
-	     # Except for the Google internal search-script snippets
+	     # Except for the Google internal search-script snippets.
 	     && (lnum - lstart != 2
 	         || getline(lstart + 1) !~ '^print(google_search\.search(')
             execute printf(":%dfoldopen", lstart)
@@ -507,24 +518,24 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   endif
   if b:response_start_line == 0
     b:response_start_line = start_line
-    # Ensure the screen updates and scrolls to the new content
+    # Ensure the screen updates and scrolls to the new content.
     cursor(start_line - 1, 1)
     normal! zt
     cursor(start_line, 1)
     redraw
   endif
   if finalmsg
-    # Pressing a mere enter jumps to the end, new line, insert mode
+    # Pressing a mere enter jumps to the end, new line, insert mode.
     nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotToInsertModeAtEnd()<CR>
   else
-    # Disable buffer modifications again while waiting for more LLM responses
+    # Disable buffer modifications again while waiting for more LLM responses.
     setlocal nomodifiable
   endif
 enddef
 
 def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
-  # Callback function for stdout from the regurge process
-  if !bufexists(ourbuf)   # guard against race conditions
+  # Callback function for stdout from the regurge process.
+  if !bufexists(ourbuf)   # guard against race conditions.
     return
   endif
 
@@ -536,10 +547,10 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     if empty(json_parts)
       throw "E491:"
     endif
-  catch /E491:/
+  catch /E49[1-9]:/
     setbufvar(ourbuf, "partial_msg", fullmsg)
     if StartRegurgeProcess(ourbuf) == 1
-      return               # Wait for a complete msg
+      return               # Wait for a complete msg.
     else
       echohl ErrorMsg | echo "Connection to regurge failed, retry later."
       json_parts = []
@@ -570,7 +581,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
       AppendLLMResponse(model_response_text, model_metadata, false)
     catch
     finally
-      # Always try to return to the buffer the user was in
+      # Always try to return to the buffer the user was in.
       execute noa_b .. original_buf
       cursor(original_pos)
     endtry
@@ -578,7 +589,14 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 
   if !empty(model_metadata)
     const struct_metadata: dict<any> = json_decode(join(model_metadata))
-    const modelprices: list<float> = getbufvar(ourbuf, "modelprices")
+    const model = has_key(struct_metadata, "modelVersion")
+                ? struct_metadata.modelVersion : ""
+    const bmodel = getbufvar(ourbuf, "model", "")
+    # If we cannot find the model in our pricelist, provide the most expensive
+    # guess instead.
+    const modelprices: list<float> =
+       has_key(prices, model)  ? prices[model]  :
+       has_key(prices, bmodel) ? prices[bmodel] : [75.0, 150.0]
 
     def CalcTokenCost(tokenname: string, costoffset: number): float
       return has_key(struct_metadata, tokenname)
@@ -591,7 +609,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     const cost_old: float = get(g:, "regurge_cost", 0.0)
     g:regurge_cost = cost_old + cost_inc
 
-    # This echo will appear in the original buffer
+    # This echo will appear in the original buffer.
     echohl Normal |
      echo printf("%s %d, ResponseTime: %d  $%.5f + $%.5f = $%.02f",
                  getbufvar(ourbuf, "persona"), ourbuf,
@@ -601,8 +619,8 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 enddef
 
 def HandleLLMError(curchan: channel, msg: string, ourbuf: number): void
-  # Callback function for stderr from the regurge process
-  # Must be specified, otherwise vim will choke on stderr output
+  # Callback function for stderr from the regurge process.
+  # Must be specified, otherwise vim will choke on stderr output.
   echohl ErrorMsg | echomsg printf("%s %d %s", pluginname, ourbuf, msg)
 enddef
 
@@ -614,26 +632,26 @@ def HandleRegurgeClose(ourbuf: number): void
 enddef
 
 def ResetChat(fullreset: bool): void
-  # Only perform this on Regurge buffers
+  # Only perform this on Regurge buffers.
   if empty(get(b:, "regurge_helper", ""))
     return
   endif
   var lnum: number = 1
   while foldlevel(lnum) == 1
-    lnum += 1                 # Preserve system instructions
+    lnum += 1                 # Preserve system instructions.
   endwhile
   const original_pos: list<number> = getcurpos()[1 : ]
   cursor(lnum, 1)
   normal! zt
   cursor(original_pos)
-  # Ensure the screen updates and scrolls to the new content
+  # Ensure the screen updates and scrolls to the new content.
   redraw
   const ourbuf: number = bufnr("%")
   while lnum <= line("$")
     if foldlevel(lnum) != 0 || fullreset
       deletebufline(ourbuf, lnum)
     else
-      lnum += 1               # Preserve user input (at most)
+      lnum += 1               # Preserve user input (at most).
     endif
   endwhile
   if fullreset
@@ -642,14 +660,14 @@ def ResetChat(fullreset: bool): void
 enddef
 
 def CancelLLMResponse(): void
-  # Only perform this on Regurge buffers
+  # Only perform this on Regurge buffers.
   if empty(get(b:, "regurge_helper", ""))
     return
   endif
   const job_obj: job = get(b:, "job_obj", null_job)
   if job_status(job_obj) == "run"
     if foldlevel(line("$")) == 0
-      job_stop(job_obj)		    # Still no output
+      job_stop(job_obj)		    # Still no output.
       setlocal modifiable
     else
       ch_sendraw(job_getchannel(job_obj),
@@ -667,7 +685,7 @@ def Cleanup(ourbuf: number)
   endif
 enddef
 
-# Define the user command to start the chat
+# Define the user command to start the chat.
 command! -nargs=? Regurge call Regurge(<f-args>)
-# Define a shorthand alias
+# Define a shorthand alias.
 command! -nargs=? R Regurge(<f-args>)

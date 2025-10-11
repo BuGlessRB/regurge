@@ -31,7 +31,7 @@ const {
 
   // This has been copied from regurge.vim.
  //  regurge only uses this in interactive mode.
-//   In JSON mode the systemInstruction is passed as data.
+//   In JSON mode the full config is passed as data.
 const cmdline_def_systeminstruction = [
   { text: `
  Be exceedingly concise, blunt.
@@ -39,43 +39,23 @@ const cmdline_def_systeminstruction = [
  Answer in staccato keywords.
  When suggesting changes: summarize issues,
  use unified-diff focus on functional changes
- without any changes in comments/whitespace.
+ preserving comments/whitespace.
  You are addressing a fellow senior developer/physicist.
  Answer in the prompt-language.
- No preamble, politeness, compliments, apologies, disclaimers.
+ No preamble, politeness, disclaimers.
 Your name is 'Regurge'.`
   }
 ];
 
 let abortctrl;
 
+// Used by both interactive and JSON modes.
 const masterconfig = {
-  model: modelname,
   config: {
-    // To curtail unforeseen cost-explosion.
-    //maxOutputTokens: 131072,
-
-    // responseMimeType: "application/json",
     responseModalities: [Modality.TEXT,
                         // Modality.IMAGE, Modality.AUDIO,
                         ],
 
-    // The following settings make the model's responses deterministic.
-    temperature: 0.1,
-    topP: 0.95,
-    topK: 1,
-    seed: 42,
-
-    // Style points, keep it neutral: do not enforce.
-    frequencyPenalty: 0.6, // -2.0 .. 2.0
-    presencePenalty: 0.3,  // -2.0 .. 2.0
-    enableAffectiveDialog: false,
-
-     thinkingConfig: {
-      includeThoughts: false,
-      thinkingBudget: 0,
-    },
-    candidateCount: 1,
     // Probabilities
     // responseLogprobs: true,
     // logprobs: 4,  // Show the four runners up alternative probs
@@ -135,6 +115,36 @@ const masterconfig = {
   },
 };
 
+const interactiveconfig = {
+  systemInstruction: cmdline_def_systeminstruction,
+  // To curtail unforeseen cost-explosion.
+  maxOutputTokens: 8192,
+
+  // responseMimeType: "application/json",
+  responseModalities: [Modality.TEXT,
+                      // Modality.IMAGE, Modality.AUDIO,
+                      ],
+
+  // The following settings make the model's responses deterministic.
+  temperature: 0.1,
+  topP: 0.95,
+  topK: 1,
+  seed: 42,
+
+  // Style points, keep it neutral: do not enforce.
+  frequencyPenalty: 0.6, // -2.0 .. 2.0
+  presencePenalty: 0.3,  // -2.0 .. 2.0
+
+  thinkingConfig: {
+    includeThoughts: false,
+    thinkingBudget: 0,
+  },
+  candidateCount: 1,
+  // Probabilities
+  // responseLogprobs: true,
+  // logprobs: 4,  // Show the four runners up alternative probs
+};
+
 function showusage(msg) {
   console.error(msg);
   process.exit(64);
@@ -178,7 +188,7 @@ const isJsonMode = process.argv.includes("-j");
  *                                          "parts": [{ "text": "..." }] })
  * @returns {Promise<Array<Object>>} The full text response from the model.
  */
-async function* sendtoLLM(systemconfig, contents) {
+async function* sendtoLLM(config, contents) {
    // Create a new control on every response, otherwise we get warnings
   //  about too many (not-yet-garbage collected) listeners
   abortctrl = new AbortController();
@@ -192,8 +202,13 @@ async function* sendtoLLM(systemconfig, contents) {
     process.exit(1);
   }
 
+  masterconfig.model = modelname;
   const modelconfig = Object.assign({}, masterconfig);
-  Object.assign(modelconfig.config, systemconfig);
+  Object.assign(modelconfig.config, config);
+  if (modelconfig.config.model) {
+    modelconfig.model = modelconfig.config.model;
+    delete(modelconfig.config, "model");
+  }
   modelconfig.contents = contents;
   modelconfig.config.abortSignal = abortctrl.signal;
 
@@ -271,14 +286,18 @@ async function sendMessageInteractive(message) {
   try {
      // Call the API with the full current chat history.
     //  Let the model implicitly handle caching of common prefixes.
+    var anything = 0;
     for await (const modelResponse of
-               sendtoLLM({systemInstruction: cmdline_def_systeminstruction},
-		chatHistory)) {
+               sendtoLLM(interactiveconfig, chatHistory)) {
       for (const part of modelResponse) {
-        if (part.text != null)
+        if (part.text != null) {
           process.stdout.write(part.text);
+	  anything = 1;
+	}
       }
     }
+    if (anything)
+      process.stdout.write("\n");
   } catch (error) {
      // If an error occurs, remove the last user message
     //  to avoid a broken turn in history.
@@ -307,7 +326,7 @@ async function startChat() {   // Read all data from stdin
       // JSON Mode: Expect JSON objects on stdin.  Arrays replace history.
      //  Objects append to history.
     let jsonChatHistory = [];
-    let systemconfig = [];
+    let jsonconfig = {};
     let previouslines = "";
 
      // FIXME This line based parsing breaks down if multiple separate
@@ -326,14 +345,14 @@ async function startChat() {   // Read all data from stdin
 	    for (const part of parsedInput.shift().parts)
 	      accu += part.text || "";
 	    try {
-	      systemconfig = eval("({" + accu + "})");
-	      if (!Array.isArray(systemconfig.systemInstruction))
-	        systemconfig.systemInstruction
-		 = [systemconfig.systemInstruction];
+	      jsonconfig = eval("({" + accu + "})");
+	      if (!Array.isArray(jsonconfig.systemInstruction))
+	        jsonconfig.systemInstruction
+		 = [jsonconfig.systemInstruction];
 	      const parts = [];
-	      for (const part of systemconfig.systemInstruction)
+	      for (const part of jsonconfig.systemInstruction)
 	        parts.push({text: part});
-	      systemconfig.systemInstruction = parts;
+	      jsonconfig.systemInstruction = parts;
 	    } catch (error) {
 	      console.error(error);
 	    }
@@ -360,7 +379,7 @@ async function startChat() {   // Read all data from stdin
         //  Let the model implicitly handle caching of common prefixes.
 	try {
 	  for await (const fullResponse of
-	             sendtoLLM(systemconfig, jsonChatHistory)) {
+	             sendtoLLM(jsonconfig, jsonChatHistory)) {
 	    // Just send back the model's response
             process.stdout.write(JSON.stringify(fullResponse) + "\n");
 	  }
