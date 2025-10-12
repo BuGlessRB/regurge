@@ -91,7 +91,7 @@ const default_config: dict<any> = {
  "topK": 1,
  "frequencyPenalty": 0.6,
  "presencePenalty": 0.3,
- "candidateCount": 1, 
+ "candidateCount": 1,
  "thinkingConfig": {
    "includeThoughts": false,
    "thinkingBudget": 0,
@@ -113,7 +113,7 @@ const system_personas: dict<dict<any>> = {
   },
 }
 
-def Regurge(requested_persona: string = pluginname)
+def Regurge(args: list<string> = [])
   # Do not create/write b: (buffer local) variables before enew.
   enew
   setlocal noswapfile
@@ -137,9 +137,22 @@ def Regurge(requested_persona: string = pluginname)
   hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
 
   const ourbuf: number = bufnr("%")
-  b:persona = empty(requested_persona)
-            ? Getgvar("persona", pluginname) : requested_persona
-  execute printf("file [%s %d]", b:persona, ourbuf)
+  var persona: string
+  var append_content: list<string> = []
+
+  if !empty(args)
+    persona = args[0]
+    if len(args) > 1
+      append_content = args[1 : ]
+    endif
+  else
+    persona = Getgvar("persona", pluginname)
+  endif
+
+  b:regurge_persona = persona
+  # The b:regurge_persona variable is also used as a marker to check if we
+  # are looking at a Regurge buffer.
+  execute printf("file [%s %d]", persona, ourbuf)
 
   # Default is: \s to send to LLM.
   const leader_sendkey:   string = Getgvar("sendkey",   "s")
@@ -151,15 +164,15 @@ def Regurge(requested_persona: string = pluginname)
   const leader_abortkey:  string = Getgvar("abortkey",  "a")
   const personas: dict<dict<string>> = Getgvar("personas", {})
   const profile: dict<any> =
-     has_key(personas, b:persona)        ? personas[b:persona]
-   : has_key(system_personas, b:persona) ? system_personas[b:persona]
-                                         : system_personas[pluginname]
+     has_key(personas, persona)        ? personas[persona]
+   : has_key(system_personas, persona) ? system_personas[persona]
+                                            : system_personas[pluginname]
 
   const systemconfig: dict<any> = extend(copy(profile.config),
     { "systemInstruction":
        extend(profile.config.systemInstruction[ : ],
 	      # Extend system instructions with persona name.
-	      [ printf("Your name is '%s'.", b:persona) ]) })
+	      [ printf("Your name is '%s'.", persona) ]) })
 
   if has_key(systemconfig, "model")
     b:model = systemconfig.model
@@ -186,6 +199,12 @@ def Regurge(requested_persona: string = pluginname)
   append(0, configfold)
   execute ":1,$-1fold"
   execute ":1foldclose"
+
+  # Append any initial content provided.
+  if !empty(append_content)
+    append("$", join(append_content))
+  endif
+
   # Move cursor to the end of the buffer.
   normal! G
 
@@ -194,16 +213,14 @@ def Regurge(requested_persona: string = pluginname)
   setlocal noshowmode
   feedkeys("\<C-o>i")   # Enter insert mode.
 
-  # The b:regurge_helper variable is also used as a marker to check if we
-  # are looking at a Regurge buffer.
-  b:regurge_helper = ["regurge", "-j"]
+  b:helper = ["regurge", "-j"]
 
   def Add_flags(flag: string, varname: string, defval: string): string
     const gval: string = has_key(profile, varname) && !empty(profile[varname])
                          ? profile[varname]
                          : Getgvar(varname, defval)
     if !empty(gval)
-      extend(b:regurge_helper, [flag, gval])
+      extend(b:helper, [flag, gval])
     endif
     return gval
   enddef
@@ -233,7 +250,12 @@ def Regurge(requested_persona: string = pluginname)
 
   redraw | echohl Normal |
    echo printf("Type then send to %s using %s%s",
-               b:persona, get(g:, "mapleader", "\\"), leader_sendkey)
+               persona, get(g:, "mapleader", "\\"), leader_sendkey)
+
+  # If initial content was provided, send it immediately.
+  if !empty(append_content)
+    SendMessageToLLM()
+  endif
 enddef
 
 # Returns: 0: failed 1: running 2: restarted.
@@ -244,7 +266,7 @@ def StartRegurgeProcess(ourbuf: number): number
       echomsg printf("regurge process [%d] died, restarting it...", ourbuf)
     endif
     # Start the regurge process in JSON mode.
-    job_obj = job_start(getbufvar(ourbuf, "regurge_helper"), {
+    job_obj = job_start(getbufvar(ourbuf, "helper"), {
      "out_cb": (channel, msg) => HandleLLMOutput(channel, msg, ourbuf),
      "err_cb": (channel, msg) => HandleLLMError(channel, msg, ourbuf),
      "close_cb": (channel) => HandleRegurgeClose(ourbuf),
@@ -612,7 +634,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     # This echo will appear in the original buffer.
     echohl Normal |
      echo printf("%s %d, ResponseTime: %d  $%.5f + $%.5f = $%.02f",
-                 getbufvar(ourbuf, "persona"), ourbuf,
+                 getbufvar(ourbuf, "regurge_persona"), ourbuf,
                  struct_metadata.ResponseTime,
 		 cost_old, cost_inc, g:regurge_cost)
   endif
@@ -633,7 +655,7 @@ enddef
 
 def ResetChat(fullreset: bool): void
   # Only perform this on Regurge buffers.
-  if empty(get(b:, "regurge_helper", ""))
+  if empty(get(b:, "regurge_persona", ""))
     return
   endif
   var lnum: number = 1
@@ -661,7 +683,7 @@ enddef
 
 def CancelLLMResponse(): void
   # Only perform this on Regurge buffers.
-  if empty(get(b:, "regurge_helper", ""))
+  if empty(get(b:, "regurge_persona", ""))
     return
   endif
   const job_obj: job = get(b:, "job_obj", null_job)
@@ -686,6 +708,6 @@ def Cleanup(ourbuf: number)
 enddef
 
 # Define the user command to start the chat.
-command! -nargs=? Regurge call Regurge(<f-args>)
+command! -nargs=* Regurge call Regurge(<f-args>)
 # Define a shorthand alias.
-command! -nargs=? R Regurge(<f-args>)
+command! -nargs=* R Regurge(<f-args>)
