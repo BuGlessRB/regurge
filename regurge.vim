@@ -114,7 +114,40 @@ const system_personas: dict<dict<any>> = {
 }
 
 def Regurge(args: list<string> = [])
-  # Do not create/write b: (buffer local) variables before enew.
+  var persona: string
+  var append_content: list<string> = []
+
+  if !empty(args)
+    persona = args[0]
+    if len(args) > 1
+      append_content = args[1 : ]
+    endif
+  else
+    persona = Getgvar("persona", pluginname)
+  endif
+
+  # Check if a buffer with this persona already exists.
+  for bufinfo in getbufinfo({'buflisted': 1})
+    # Check if it's a Regurge buffer by looking for the filetype and persona marker in the filename.
+    if bufinfo.filetype == 'markdown' && bufinfo.name =~ printf('^\[%s \d\+\]$', persona)
+      # Found an existing buffer with this persona.
+      execute printf("buffer %d", bufinfo.bufnr)
+
+      # If there's initial content, append it to the existing buffer.
+      if !empty(append_content)
+        setlocal modifiable
+        append("$", join(append_content))
+        normal! G
+        redraw
+        SendMessageToLLM()
+      endif
+      # Return a string to indicate we jumped to an existing buffer.
+      # This prevents the rest of the function from executing.
+      return printf("Jumped to existing buffer for persona '%s'.", persona)
+    endif
+  endfor
+
+  # If no existing buffer was found, proceed with creating a new one.
   enew
   setlocal noswapfile
   setlocal noundofile
@@ -137,18 +170,6 @@ def Regurge(args: list<string> = [])
   hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
 
   const ourbuf: number = bufnr("%")
-  var persona: string
-  var append_content: list<string> = []
-
-  if !empty(args)
-    persona = args[0]
-    if len(args) > 1
-      append_content = args[1 : ]
-    endif
-  else
-    persona = Getgvar("persona", pluginname)
-  endif
-
   b:regurge_persona = persona
   # The b:regurge_persona variable is also used as a marker to check if we
   # are looking at a Regurge buffer.
