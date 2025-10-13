@@ -115,163 +115,158 @@ const system_personas: dict<dict<any>> = {
 
 def Regurge(args: list<string> = [])
   var persona: string
-  var append_content: list<string> = []
+  var append_content: string
 
   if !empty(args)
     persona = args[0]
     if len(args) > 1
-      append_content = args[1 : ]
+      append_content = join(args[1 : ])
     endif
   else
     persona = Getgvar("persona", pluginname)
   endif
 
-  # Check if a buffer with this persona already exists.
-  for bufinfo in getbufinfo({'buflisted': 1})
-    # Check if it's a Regurge buffer by looking for the filetype and persona marker in the filename.
-    if bufinfo.filetype == 'markdown' && bufinfo.name =~ printf('^\[%s \d\+\]$', persona)
-      # Found an existing buffer with this persona.
-      execute printf("buffer %d", bufinfo.bufnr)
+  var foundbuffer: bool
 
-      # If there's initial content, append it to the existing buffer.
-      if !empty(append_content)
-        setlocal modifiable
-        append("$", join(append_content))
-        normal! G
-        redraw
-        SendMessageToLLM()
-      endif
-      # Return a string to indicate we jumped to an existing buffer.
-      # This prevents the rest of the function from executing.
-      return printf("Jumped to existing buffer for persona '%s'.", persona)
+  # Check if a buffer with this persona already exists.
+  for bufinfo in getbufinfo({"buflisted": 1})
+    if has_key(bufinfo.variables, "regurge_persona")
+     && bufinfo.variables.regurge_persona == persona
+      foundbuffer = true
+      execute "buffer " .. bufinfo.bufnr
+      break
     endif
   endfor
 
-  # If no existing buffer was found, proceed with creating a new one.
-  enew
-  setlocal noswapfile
-  setlocal noundofile
-  setlocal wrap
-  setlocal linebreak
-  setlocal noautoindent nosmartindent nocindent
-  setlocal indentkeys=
-  setlocal indentexpr=
-  setlocal nomodified
-  setlocal modifiable
-  setlocal foldmethod=manual
-  setlocal buftype=nofile
-  # Setting filetype should be last, since it triggers a FileType event.
-  setlocal filetype=markdown
+  if !foundbuffer
+    # Do not create/write b: (buffer local) variables before enew.
+    # If no existing buffer was found, proceed with creating a new one.
+    enew
+    setlocal noswapfile
+    setlocal noundofile
+    setlocal wrap
+    setlocal linebreak
+    setlocal noautoindent nosmartindent nocindent
+    setlocal indentkeys=
+    setlocal indentexpr=
+    setlocal nomodified
+    setlocal modifiable
+    setlocal foldmethod=manual
+    setlocal buftype=nofile
+    # Setting filetype should be last, since it triggers a FileType event.
+    setlocal filetype=markdown
 
-  # Define custom highlight groups for fold levels.
-  # Default definitions; users can override in their vimrc.
-  hi default RegurgeUser  ctermfg=Green guifg=Green
-  hi default RegurgeModel ctermfg=NONE  guifg=NONE
-  hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
+    # Define custom highlight groups for fold levels.
+    # Default definitions; users can override in their vimrc.
+    hi default RegurgeUser  ctermfg=Green guifg=Green
+    hi default RegurgeModel ctermfg=NONE  guifg=NONE
+    hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
 
-  const ourbuf: number = bufnr("%")
-  b:regurge_persona = persona
-  # The b:regurge_persona variable is also used as a marker to check if we
-  # are looking at a Regurge buffer.
-  execute printf("file [%s %d]", persona, ourbuf)
+    const ourbuf: number = bufnr("%")
+    b:regurge_persona = persona
+    # The b:regurge_persona variable is also used as a marker to check if we
+    # are looking at a Regurge buffer.
+    execute printf("file [%s %d]", persona, ourbuf)
 
-  # Default is: \s to send to LLM.
-  const leader_sendkey:   string = Getgvar("sendkey",   "s")
-  # Default is: \r reduce the chat to only the user input.
-  const leader_reducekey: string = Getgvar("reducekey", "r")
-  # Default is: \R reset the chat to system instructions only.
-  const leader_resetkey:  string = Getgvar("resetkey",  "R")
-  # Default is: \a abort the running response.
-  const leader_abortkey:  string = Getgvar("abortkey",  "a")
-  const personas: dict<dict<string>> = Getgvar("personas", {})
-  const profile: dict<any> =
-     has_key(personas, persona)        ? personas[persona]
-   : has_key(system_personas, persona) ? system_personas[persona]
-                                            : system_personas[pluginname]
+    # Default is: \s to send to LLM.
+    const leader_sendkey:   string = Getgvar("sendkey",   "s")
+    # Default is: \r reduce the chat to only the user input.
+    const leader_reducekey: string = Getgvar("reducekey", "r")
+    # Default is: \R reset the chat to system instructions only.
+    const leader_resetkey:  string = Getgvar("resetkey",  "R")
+    # Default is: \a abort the running response.
+    const leader_abortkey:  string = Getgvar("abortkey",  "a")
+    const personas: dict<dict<string>> = Getgvar("personas", {})
+    const profile: dict<any> =
+       has_key(personas, persona)        ? personas[persona]
+     : has_key(system_personas, persona) ? system_personas[persona]
+                                              : system_personas[pluginname]
 
-  const systemconfig: dict<any> = extend(copy(profile.config),
-    { "systemInstruction":
-       extend(profile.config.systemInstruction[ : ],
-	      # Extend system instructions with persona name.
-	      [ printf("Your name is '%s'.", persona) ]) })
+    const systemconfig: dict<any> = extend(copy(profile.config),
+      { "systemInstruction":
+         extend(profile.config.systemInstruction[ : ],
+                # Extend system instructions with persona name.
+                [ printf("Your name is '%s'.", persona) ]) })
 
-  if has_key(systemconfig, "model")
-    b:model = systemconfig.model
+    if has_key(systemconfig, "model")
+      b:model = systemconfig.model
+    endif
+
+    var configfold: list<string>
+    for [key, value] in items(systemconfig)
+      if type(value) == v:t_list
+        final mylist: list<string> = value[ : ]
+        add(configfold, key .. ":")
+        for i in range(len(mylist))
+          mylist[i] = substitute(mylist[i], '[`\\]', '\\&', "g")
+        endfor
+        mylist[0] = "`" .. mylist[0]
+        mylist[-1] = mylist[-1] .. "`,"
+        extend(configfold, mylist)
+      else
+        add(configfold, printf("%s: %s,", key,
+          (type(value) == v:t_string
+           && key != "model" ? value : json_encode(value))))
+      endif
+    endfor
+    # Fill the first fold with the config and system instructions.
+    append(0, configfold)
+    execute ":1,$-1fold"
+    execute ":1foldclose"
+
+    # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
+    b:old_showmode = &showmode
+    setlocal noshowmode
+    feedkeys("\<C-o>i")   # Enter insert mode.
+
+    b:helper = ["regurge", "-j"]
+
+    def Add_flags(flag: string, varname: string, defval: string): string
+      const gval: string = has_key(profile, varname)
+                            && !empty(profile[varname])
+                           ? profile[varname]
+                           : Getgvar(varname, defval)
+      if !empty(gval)
+        extend(b:helper, [flag, gval])
+      endif
+      return gval
+    enddef
+
+    Add_flags("-L", "location", "") # Default via environment (see regurge).
+    Add_flags("-P", "project", "")  # Default via environment (see regurge).
+
+    b:job_obj = null_job        # Init it, in case the buffer is wiped now.
+
+    autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
+    autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
+    autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
+    autocmd InsertEnter          <buffer> DisableMagicEnter()
+    autocmd InsertLeave          <buffer> AutoSend()
+    autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
+
+    def Definelkey(key: string, func: string): void
+      execute printf(
+               "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
+               key, func)
+    enddef
+
+    Definelkey(leader_sendkey,   "SendMessageToLLM()")
+    Definelkey(leader_reducekey, "ResetChat(v:false)")
+    Definelkey(leader_resetkey,  "ResetChat(v:true)")
+    Definelkey(leader_abortkey,  "CancelLLMResponse()")
+
+    redraw | echohl Normal |
+     echo printf("Type then send to %s using %s%s",
+                 persona, get(g:, "mapleader", "\\"), leader_sendkey)
   endif
 
-  var configfold: list<string>
-  for [key, value] in items(systemconfig)
-    if type(value) == v:t_list
-      final mylist: list<string> = value[ : ]
-      add(configfold, key .. ":")
-      for i in range(len(mylist))
-        mylist[i] = substitute(mylist[i], '[`\\]', '\\&', "g")
-      endfor
-      mylist[0] = "`" .. mylist[0]
-      mylist[-1] = mylist[-1] .. "`,"
-      extend(configfold, mylist)
-    else
-      add(configfold, printf("%s: %s,", key,
-        (type(value) == v:t_string
-         && key != "model" ? value : json_encode(value))))
-    endif
-  endfor
-  # Fill the first fold with the config and system instructions.
-  append(0, configfold)
-  execute ":1,$-1fold"
-  execute ":1foldclose"
-
-  # Append any initial content provided.
+  # Append any preset content provided.
   if !empty(append_content)
-    append("$", join(append_content))
+    append("$", append_content)
   endif
 
   # Move cursor to the end of the buffer.
   normal! G
-
-  # Temporarily disable 'showmode' to suppress "--- INSERT ---" message
-  b:old_showmode = &showmode
-  setlocal noshowmode
-  feedkeys("\<C-o>i")   # Enter insert mode.
-
-  b:helper = ["regurge", "-j"]
-
-  def Add_flags(flag: string, varname: string, defval: string): string
-    const gval: string = has_key(profile, varname) && !empty(profile[varname])
-                         ? profile[varname]
-                         : Getgvar(varname, defval)
-    if !empty(gval)
-      extend(b:helper, [flag, gval])
-    endif
-    return gval
-  enddef
-
-  Add_flags("-L", "location", "") # Default via environment (see regurge).
-  Add_flags("-P", "project", "")  # Default via environment (see regurge).
-
-  b:job_obj = null_job        # Init it, in case the buffer is wiped right away.
-
-  autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
-  autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
-  autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
-  autocmd InsertEnter          <buffer> DisableMagicEnter()
-  autocmd InsertLeave          <buffer> AutoSend()
-  autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
-
-  def Definelkey(key: string, func: string): void
-    execute printf(
-             "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
-             key, func)
-  enddef
-
-  Definelkey(leader_sendkey,   "SendMessageToLLM()")
-  Definelkey(leader_reducekey, "ResetChat(v:false)")
-  Definelkey(leader_resetkey,  "ResetChat(v:true)")
-  Definelkey(leader_abortkey,  "CancelLLMResponse()")
-
-  redraw | echohl Normal |
-   echo printf("Type then send to %s using %s%s",
-               persona, get(g:, "mapleader", "\\"), leader_sendkey)
 
   # If initial content was provided, send it immediately.
   if !empty(append_content)
