@@ -117,7 +117,8 @@ def Regurge(args: list<string> = [])
   var persona: string
   var append_content: string
 
-  if !empty(args)
+  const current_tab: number = win_gettabpage(0)
+  if !empty(args) && args[0] != ""
     persona = args[0]
     if len(args) > 1
       append_content = join(args[1 : ])
@@ -129,7 +130,7 @@ def Regurge(args: list<string> = [])
   var foundbuffer: bool
 
   # Check if a buffer with this persona already exists.
-  for bufinfo in getbufinfo({"buflisted": 1})
+  for bufinfo in getbufinfo({"buflisted": 1, "tabpage": current_tab})
     if has_key(bufinfo.variables, "regurge_persona")
      && bufinfo.variables.regurge_persona == persona
       foundbuffer = true
