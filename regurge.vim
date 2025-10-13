@@ -114,17 +114,17 @@ const system_personas: dict<dict<any>> = {
 }
 
 def Regurge(args: list<string> = [])
-  var persona: string
+  var persona: string = Getgvar("persona", pluginname)
   var append_content: string
 
   const current_tab: number = win_gettabpage(0)
-  if !empty(args) && args[0] != ""
-    persona = args[0]
+  if !empty(args)
+    if !empty(args[0])
+      persona = args[0]
+    endif
     if len(args) > 1
       append_content = join(args[1 : ])
     endif
-  else
-    persona = Getgvar("persona", pluginname)
   endif
 
   var foundbuffer: bool
