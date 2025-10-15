@@ -117,9 +117,8 @@ def Regurge(args: list<string> = [])
   var persona: string = Getgvar("persona", pluginname)
   var append_content: string
 
-  const current_tab: number = win_gettabpage(0)
   if !empty(args)
-    if !empty(args[0])
+    if args[0] != ""
       persona = args[0]
     endif
     if len(args) > 1
@@ -129,10 +128,11 @@ def Regurge(args: list<string> = [])
 
   var foundbuffer: bool
 
-  # Check if a buffer with this persona already exists.
-  for bufinfo in getbufinfo({"buflisted": 1, "tabpage": current_tab})
-    if has_key(bufinfo.variables, "regurge_persona")
-     && bufinfo.variables.regurge_persona == persona
+  # Check if a buffer with this persona already exists
+  for bufinfo in getbufinfo({"bufloaded": 1})
+    if has_key(bufinfo, "variables") && 
+       has_key(bufinfo.variables, "regurge_persona") &&
+       bufinfo.variables.regurge_persona == persona
       foundbuffer = true
       execute "buffer " .. bufinfo.bufnr
       break
@@ -167,7 +167,7 @@ def Regurge(args: list<string> = [])
     b:regurge_persona = persona
     # The b:regurge_persona variable is also used as a marker to check if we
     # are looking at a Regurge buffer.
-    execute printf("file [%s %d]", persona, ourbuf)
+    execute printf("file [%s]", persona)
 
     # Default is: \s to send to LLM.
     const leader_sendkey:   string = Getgvar("sendkey",   "s")
@@ -178,10 +178,22 @@ def Regurge(args: list<string> = [])
     # Default is: \a abort the running response.
     const leader_abortkey:  string = Getgvar("abortkey",  "a")
     const personas: dict<dict<string>> = Getgvar("personas", {})
-    const profile: dict<any> =
-       has_key(personas, persona)        ? personas[persona]
-     : has_key(system_personas, persona) ? system_personas[persona]
-                                              : system_personas[pluginname]
+
+    var profile: dict<any>
+    var shortname: string = persona
+    while shortname != ""
+      if has_key(personas, shortname)
+	profile = personas[shortname]
+	break
+      elseif has_key(system_personas, shortname)
+	profile = system_personas[shortname]
+	break
+      endif
+      shortname = strpart(shortname, 0, strlen(shortname) - 1)
+    endwhile
+    if !profile
+      profile = system_personas[pluginname]
+    endif
 
     const systemconfig: dict<any> = extend(copy(profile.config),
       { "systemInstruction":
@@ -227,7 +239,7 @@ def Regurge(args: list<string> = [])
                             && !empty(profile[varname])
                            ? profile[varname]
                            : Getgvar(varname, defval)
-      if !empty(gval)
+      if gval != ""
         extend(b:helper, [flag, gval])
       endif
       return gval
@@ -262,7 +274,7 @@ def Regurge(args: list<string> = [])
   endif
 
   # Append any preset content provided.
-  if !empty(append_content)
+  if append_content != ""
     append("$", append_content)
   endif
 
@@ -270,7 +282,7 @@ def Regurge(args: list<string> = [])
   normal! G
 
   # If initial content was provided, send it immediately.
-  if !empty(append_content)
+  if append_content != ""
     SendMessageToLLM()
   endif
 enddef
@@ -356,7 +368,7 @@ def AutoSend(): void
   endif
   const curline: number = line('.')
   if curline == line("$") && col(".") > 1 && col(".") + 1 == col("$")
-     && foldlevel(curline) == 0 && !empty(getline(curline))
+     && foldlevel(curline) == 0 && getline(curline) != ""
     SendMessageToLLM()
   endif
 enddef
@@ -428,14 +440,100 @@ def SendMessageToLLM(): void
   Flushparts("", 0)
 
   if empty(history) || history[-1].role != "user"
-     || empty(trim(history[-1].parts[0].text))
+    return    # Nothing to send.
+  endif
+  var userquestion: string = history[-1].parts[0].text
+  if trim(userquestion) == ""
     return    # Nothing to send.
   endif
 
+  def IncludeToLLM(lines: list<string>, filename: string = "",
+   startlinenr: number = 0, endlinenr: number = 0, language: string = "")
+    const foundbackticks: list<dict<any>> = matchstrlist(lines, '\v^```+')
+    const foundlengths: dict<number> = {}
+    for cmatch in foundbackticks
+      foundlengths[strlen(cmatch.text)] = 1
+    endfor
+    var shortest: number = 3
+    while (has_key(foundlengths, shortest))
+      shortest = shortest + 1
+    endwhile
+    const markerend: string = repeat("`", shortest)
+    var markerbegin: string = markerend .. filename
+    if startlinenr != 0
+      markerbegin ..= startlinenr
+    endif
+    if endlinenr != 0
+      markerbegin ..= ":" .. endlinenr
+    endif
+    if language != ""
+      markerbegin ..= " " .. language
+    endif
+    for firstuserentry in history
+      if firstuserentry.role == "user"
+        firstuserentry.parts->insert({"text":
+         join([markerbegin] + lines + [markerend], "\n")})
+        break
+      endif
+    endfor
+  enddef
+
+  const statements: list<string> = ["include"]
+  const oredstatements: string = "(" .. join(statements, "|") .. ")"
+  for phrase in
+       split(userquestion, printf('\v(\_s+|^)(!%s(\_s|$))@=', oredstatements))
+    const twowords: list<string> =
+     matchlist(phrase, printf('\v^!%s%%(\s+(.*))?', oredstatements))
+    if twowords->len() > 1
+      const statement = twowords[1]
+      const argument = matchlist(twowords[2], "[^\n]*")[0]
+      if statement == "include"
+        if argument[0] == "!"
+          # run script and include output
+        endif
+        if argument == "yank"
+          # include yank
+        endif
+        if argument == "visual"
+          # include visual
+        endif
+        if argument == "buffer"
+          # include last active buffer
+        endif
+        if argument == "buffers"
+          for bufinfo in getbufinfo({"bufloaded": 1})
+            if getbufvar(bufinfo.bufnr, "&buftype") == ""
+              const buflines: list<string> = getbufline(bufinfo.bufnr, 1, "$")
+              IncludeToLLM(buflines, fnamemodify(bufinfo.name, ":~"),
+               1, buflines->len())
+            endif
+          endfor
+        endif
+        if argument == "windows"
+          const seen_buffers: dict<number> = {}
+          for bufnr in tabpagebuflist(0)
+            if getbufvar(bufnr, "&buftype") == "" &&
+	       !has_key(seen_buffers, bufnr)
+              seen_buffers[bufnr] = 1
+              const buflines: list<string> = getbufline(bufnr, 1, "$")
+              IncludeToLLM(buflines, fnamemodify(bufname(bufnr), ":~"),
+               1, buflines->len())
+            endif
+          endfor
+        endif
+        if argument == ""
+          # include all files in the current tree
+        else
+          # include wildcard filenames
+        endif
+      endif
+    endif
+  endfor
+
   if (history[0].role == "model")
-    const modelinfold =
+    const modelinfold: string =
      matchstr(history[0].parts[0].text, '\s\s*model:\s*"\zs[^"]\+\ze",')
-    if !empty(modelinfold)
+    if modelinfold != ""
       b:model = modelinfold
     endif
   endif
@@ -672,7 +770,7 @@ enddef
 
 def ResetChat(fullreset: bool): void
   # Only perform this on Regurge buffers.
-  if empty(get(b:, "regurge_persona", ""))
+  if get(b:, "regurge_persona", "") == ""
     return
   endif
   var lnum: number = 1
@@ -700,7 +798,7 @@ enddef
 
 def CancelLLMResponse(): void
   # Only perform this on Regurge buffers.
-  if empty(get(b:, "regurge_persona", ""))
+  if get(b:, "regurge_persona", "") == ""
     return
   endif
   const job_obj: job = get(b:, "job_obj", null_job)
@@ -720,6 +818,7 @@ enddef
 def Cleanup(ourbuf: number)
   const job_obj: job = getbufvar(ourbuf, "job_obj", null_job)
   if job_status(job_obj) == "run"
+    ch_setoptions(job_getchannel(job_obj), {"close_cb": ""})
     job_stop(job_obj)
   endif
 enddef
