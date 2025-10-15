@@ -10,7 +10,8 @@
   "author": "",
   "license": "ISC OR GPL-3.0",
   "dependencies": {
-    "@google/genai": "*"
+    "@google/genai": "*",
+    "@google-cloud/aiplatform": "*"
   },
   "bin": {
     "regurge": "./regurge"
