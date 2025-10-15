@@ -459,6 +459,16 @@ def SendMessageToLLM(): void
     return    # Nothing to send.
   endif
 
+  for entry in history
+    if entry.role == "user"
+      for part in entry.parts
+        part.text = substitute(part.text,
+	                       '\v(\_s+|^)!include(\s[^\n]*|$)', "", "g")
+      endfor
+    endif
+  endfor
+  echom json_encode(history)
+
   def IncludeToLLM(lines: list<string>, filename: string = "",
    startlinenr: number = 0, language: string = "")
     const foundbackticks: list<dict<any>> = matchstrlist(lines, '\v^```+')
@@ -499,7 +509,8 @@ def SendMessageToLLM(): void
       const argument = matchlist(twowords[2], "[^\n]*")[0]
       if statement == "include"
         if argument[0] == "!"
-          # run script and include output
+          const stdoutlist: list<string> = systemlist(argument[1 : ])
+	  IncludeToLLM(stdoutlist, "stdout")
         endif
         if argument == "yank"
           const lines: list<string> = getreg("0", 1, 1)
