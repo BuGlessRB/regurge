@@ -460,7 +460,7 @@ def SendMessageToLLM(): void
   endif
 
   def IncludeToLLM(lines: list<string>, filename: string = "",
-   startlinenr: number = 0, endlinenr: number = 0, language: string = "")
+   startlinenr: number = 0, language: string = "")
     const foundbackticks: list<dict<any>> = matchstrlist(lines, '\v^```+')
     const foundlengths: dict<number> = {}
     for cmatch in foundbackticks
@@ -471,12 +471,10 @@ def SendMessageToLLM(): void
       shortest = shortest + 1
     endwhile
     const markerend: string = repeat("`", shortest)
-    var markerbegin: string = markerend .. filename
+    var markerbegin: string = markerend .. fnamemodify(filename, ":~")
     if startlinenr != 0
-      markerbegin ..= startlinenr
-    endif
-    if endlinenr != 0
-      markerbegin ..= ":" .. endlinenr
+      markerbegin ..= printf("%d:%d",
+                             startlinenr, startlinenr + lines->len() - 1)
     endif
     if language != ""
       markerbegin ..= " " .. language
@@ -504,32 +502,43 @@ def SendMessageToLLM(): void
           # run script and include output
         endif
         if argument == "yank"
-          # include yank
+          const lines: list<string> = getreg("0", 1, 1)
+          IncludeToLLM(lines, bufname("#"), line("'["))
         endif
-        if argument == "visual"
-          # include visual
-        endif
+
+	def IncludeBuffer(bufinfo: dict<any>): bool
+          if getbufvar(bufinfo.bufnr, "&buftype") == ""
+            const lines: list<string> = getbufline(bufinfo.bufnr, 1, "$")
+            IncludeToLLM(lines, bufinfo.name, 1)
+	    return true
+	  endif
+	  return false
+	enddef
+
         if argument == "buffer"
-          # include last active buffer
+	  # Try the previous buffer first
+          if !IncludeBuffer(getbufinfo(bufnr("#"))[0])
+	    const jumps: list<dict<any>> = getjumplist()
+	    # Otherwise go from most recent to eldest buffers and pick the
+	    # first normal one we encounter
+	    for i in range(len(jumps), -1, -1)
+	      if IncludeBuffer(getbufinfo(jumps[i].bufnr)[0])
+		break
+	      endif
+	    endfor
+	  endif
         endif
         if argument == "buffers"
           for bufinfo in getbufinfo({"bufloaded": 1})
-            if getbufvar(bufinfo.bufnr, "&buftype") == ""
-              const buflines: list<string> = getbufline(bufinfo.bufnr, 1, "$")
-              IncludeToLLM(buflines, fnamemodify(bufinfo.name, ":~"),
-               1, buflines->len())
-            endif
+            IncludeBuffer(bufinfo)
           endfor
         endif
         if argument == "windows"
           const seen_buffers: dict<number> = {}
           for bufnr in tabpagebuflist(0)
-            if getbufvar(bufnr, "&buftype") == "" &&
-	       !has_key(seen_buffers, bufnr)
+            if !has_key(seen_buffers, bufnr)
               seen_buffers[bufnr] = 1
-              const buflines: list<string> = getbufline(bufnr, 1, "$")
-              IncludeToLLM(buflines, fnamemodify(bufname(bufnr), ":~"),
-               1, buflines->len())
+	      IncludeBuffer(getbufinfo(bufnr)[0])
             endif
           endfor
         endif
