@@ -113,7 +113,7 @@ const system_personas: dict<dict<any>> = {
   },
 }
 
-def Regurge(args: list<string> = [])
+def Regurge(...args: list<string>): void
   var persona: string = Getgvar("persona", pluginname)
   var append_content: string
 
@@ -177,7 +177,7 @@ def Regurge(args: list<string> = [])
     const leader_resetkey:  string = Getgvar("resetkey",  "R")
     # Default is: \a abort the running response.
     const leader_abortkey:  string = Getgvar("abortkey",  "a")
-    const personas: dict<dict<string>> = Getgvar("personas", {})
+    const personas: dict<dict<any>> = Getgvar("personas", {})
 
     var profile: dict<any>
     var shortname: string = persona
@@ -236,7 +236,7 @@ def Regurge(args: list<string> = [])
 
     def Add_flags(flag: string, varname: string, defval: string): string
       const gval: string = has_key(profile, varname)
-                            && !empty(profile[varname])
+                            && profile[varname] != ""
                            ? profile[varname]
                            : Getgvar(varname, defval)
       if gval != ""
@@ -354,7 +354,7 @@ def ApplyFoldHighlighting(): void
 enddef
 
 def DisableMagicEnter(): void
-  if !empty(maparg("<CR>"))
+  if maparg("<CR>") != ""
     nunmap <buffer> <CR>
   endif
 enddef
@@ -530,7 +530,7 @@ def SendMessageToLLM(): void
     endif
   endfor
 
-  if (history[0].role == "model")
+  if history[0].role == "model"
     const modelinfold: string =
      matchstr(history[0].parts[0].text, '\s\s*model:\s*"\zs[^"]\+\ze",')
     if modelinfold != ""
@@ -553,9 +553,9 @@ enddef
 
 def AppendLLMResponse(response: list<string>, metadata: list<string>,
                  active: bool): void
-  b:partial_msg = ""	      # Received whole message, so clear it.
+  b:partial_msg = []	      # Received whole message, so clear it.
   const finalmsg = !empty(metadata)
-  if (finalmsg)
+  if finalmsg
     timer_stop(b:timer_id)
   endif
 
@@ -564,8 +564,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
 
   setlocal modifiable
 
-  const start_line: number = b:response_start_line == 0 ?
-                             line("$") + 1 : b:response_start_line
+  const start_line: number = b:response_start_line ?? line("$") + 1
   var end_meta_line: number
   const resptime: string = printf(" \"ResponseTime\": %.0f ",
                             reltimefloat(reltime(b:start_time)) * 1000)
@@ -676,16 +675,15 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     return
   endif
 
-  const fullmsg: string = getbufvar(ourbuf, "partial_msg", "") .. msg
   var json_parts: list<any>
 
   try
-    json_parts = json_decode(fullmsg)
+    json_parts = json_decode(join(
+                  getbufvar(ourbuf, "partial_msg", [])->add(msg), ""))
     if empty(json_parts)
       throw "E491:"
     endif
   catch /E49[1-9]:/
-    setbufvar(ourbuf, "partial_msg", fullmsg)
     if StartRegurgeProcess(ourbuf) == 1
       return               # Wait for a complete msg.
     else
