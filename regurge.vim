@@ -133,8 +133,20 @@ def Regurge(...args: list<string>): void
     if has_key(bufinfo, "variables") && 
        has_key(bufinfo.variables, "regurge_persona") &&
        bufinfo.variables.regurge_persona == persona
+      var foundwin: bool
+      for win_id in win_findbuf(bufinfo.bufnr)
+        if win_id2tabwin(win_id)[0] == tabpagenr()
+	  # Jump to the found window
+          win_gotoid(win_id)
+	  foundwin = true
+	  break
+        endif
+      endfor
+      if !foundwin
+	# Otherwise switch to this persona's buffer
+        execute "buffer " .. bufinfo.bufnr
+      endif
       foundbuffer = true
-      execute "buffer " .. bufinfo.bufnr
       break
     endif
   endfor
