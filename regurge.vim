@@ -602,10 +602,9 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   const finalmsg = !empty(metadata)
   if finalmsg
     timer_stop(b:timer_id)
+    # Clear the status field (only visible if the buffer is active).
+    redraw | echohl Normal | echo ""
   endif
-
-  # Clear the status field (only visible if the buffer is active).
-  redraw | echohl Normal | echo ""
 
   setlocal modifiable
 
@@ -680,7 +679,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
       # Assume matching backtick markers in the output.
       # If they don't match, the response folding will be weird.
       if line =~ '^\s*```'
-        if lstart != 0
+        if lstart == 0
           lstart = lnum
         else
           execute printf(":%d,%dfold", lstart, lnum)
