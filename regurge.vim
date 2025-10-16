@@ -333,9 +333,19 @@ def ShowHourglass(ourbuf: number, timer_id: number): void
   endif
 enddef
 
+def ProfileStamp(name: string): void
+  var t_old: any = get(b:, "t_old", "")
+  if empty(t_old)
+    t_old = reltime()
+    b:t_old = t_old
+  endif
+  echom printf("Profile %s %.03f", name, reltimefloat(reltime(t_old)))
+enddef
+
 # FIXME The fold-level-dependent highlighting has window scope, so it needs
 # to be toggled on and off, depending on the buffer being in view.
 def ClearFoldHighlighting(): void
+  ProfileStamp("Clear")
   const fold_match_ids: list<number> = get(w:, "regurge_fold_match_ids", [])
   # Window-local list to store match IDs for dynamic highlighting.
   for id in fold_match_ids
@@ -346,6 +356,7 @@ enddef
 
 # Function to apply fold-level-dependent highlighting to visible lines.
 def ApplyFoldHighlighting(): void
+  ProfileStamp("Apply")
   ClearFoldHighlighting()
 
   final linesperlevel: list<list<number>> = [[], [], []]
