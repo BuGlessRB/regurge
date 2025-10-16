@@ -459,19 +459,26 @@ def SendMessageToLLM(): void
     return    # Nothing to send.
   endif
 
+  # This list could be extended with more keywords,
+  # currently we only recognise !include
+  const statements: list<string> = ["include"]
+  const oredstatements: string = "(" .. join(statements, "|") .. ")"
+
+  # Strip out the !include directives, so the LLM doesn't see them.
   for entry in history
     if entry.role == "user"
       for part in entry.parts
+	# This will leave empty lines sometimes which should not be a problem.
         part.text = substitute(part.text,
-	                       '\v(\_s+|^)!include(\s[^\n]*|$)', "", "g")
+	 printf('\C\v\_s+!%%%s%%(\s[^\n]*|\ze\n|$)', oredstatements),
+	        "", "g")
       endfor
     endif
   endfor
-  echom json_encode(history)
 
   def IncludeToLLM(lines: list<string>, filename: string = "",
    startlinenr: number = 0, language: string = "")
-    const foundbackticks: list<dict<any>> = matchstrlist(lines, '\v^```+')
+    const foundbackticks: list<dict<any>> = matchstrlist(lines, '\C\v^```+')
     const foundlengths: dict<number> = {}
     for cmatch in foundbackticks
       foundlengths[strlen(cmatch.text)] = 1
@@ -498,12 +505,10 @@ def SendMessageToLLM(): void
     endfor
   enddef
 
-  const statements: list<string> = ["include"]
-  const oredstatements: string = "(" .. join(statements, "|") .. ")"
   for phrase in
-       split(userquestion, printf('\v(\_s+|^)(!%s(\_s|$))@=', oredstatements))
+   split(userquestion, printf('\C\v\_s+%%(!%%%s%%(\_s|$))@=', oredstatements))
     const twowords: list<string> =
-     matchlist(phrase, printf('\v^!%s%%(\s+(.*))?', oredstatements))
+     matchlist(phrase, printf('\C\v^!%s%%(\s+(.*))?', oredstatements))
     if twowords->len() > 1
       const statement = twowords[1]
       const argument = matchlist(twowords[2], "[^\n]*")[0]
@@ -664,18 +669,21 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     while lnum < end_line
       lnum += 1
       const line: string = getline(lnum)
+      # Assume matching backtick markers in the output.
+      # If they don't match, the response folding will be weird.
       if line =~ '^\s*```'
-        if line =~ '^\s*```\w\+$'
+        if lstart != 0
           lstart = lnum
-        elseif line =~ '^\s*```\s*$'
+        else
           execute printf(":%d,%dfold", lstart, lnum)
-	  # Open small source snippets.
+          # Open small source snippets.
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
-	     # Except for the Google internal search-script snippets.
-	     && (lnum - lstart != 2
-	         || getline(lstart + 1) !~ '^print(google_search\.search(')
+             # Except for the Google internal search-script snippets.
+             && (lnum - lstart != 2
+                 || getline(lstart + 1) !~ '^print(google_search\.search(')
             execute printf(":%dfoldopen", lstart)
           endif
+	  lstart = 0
         endif
       endif
     endwhile
