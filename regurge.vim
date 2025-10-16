@@ -461,6 +461,14 @@ def SendMessageToLLM(): void
 
   # This list could be extended with more keywords,
   # currently we only recognise !include
+  #
+  # Preliminary docs for this, to add more context to the LLM:
+  # !include !ls -l                     Include output of a shell command
+  # !include yank                       Include content of last yank
+  # !include buffer                     Include content of last buffer
+  # !include buffers                    Include content of all buffers
+  # !include windows                    Include content of all visible buffers
+  #                                     in the current tab
   const statements: list<string> = ["include"]
   const oredstatements: string = "(" .. join(statements, "|") .. ")"
 
