@@ -47,8 +47,8 @@ vim9script
 # Global variable that stores total cost in $
 # since start of vim: g:regurge_cost
 
-const default_model: string = "gemini-2.5-flash-lite"
-#const default_model: string = "gemini-flash-lite-latest"
+const default_model: string = "gemini-flash-lite-latest"
+
 const gvarprefix: string = "regurge_"
 const pluginname: string = "Regurge"
 const default_autofold_code: number = 8
