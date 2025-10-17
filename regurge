@@ -234,6 +234,7 @@ async function* sendtoLLM(config, contents) {
           candidatesbytecount += part.text.length;
       }
       const content = mresponse.candidates[0]?.content;
+      const grounding = mresponse.candidates[0]?.groundingMetadata;
       meta = mresponse.usageMetadata;
       modelversion = mresponse.modelVersion;
       finishreason = mresponse.candidates[0]?.finishReason;
@@ -255,6 +256,8 @@ async function* sendtoLLM(config, contents) {
 	  };
 	  if (finishreason !== "STOP")
 	    meta.finishReason = finishreason;
+	  if (grounding && Object.keys(grounding).length)
+            meta.groundingMetadata = grounding;
           fullResponse.push({"usageMetadata": JSON.stringify(meta, null, 2)});
 	}
       }
