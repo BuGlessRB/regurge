@@ -349,12 +349,14 @@ enddef
 def ApplyFoldHighlighting(force: bool = true): void
   const lastvisibleline: number = line("w$")
   const lvscreenrow: number = screenpos(win_getid(), lastvisibleline, 1).row
-  const lastvisible: list<number> = get(b:, "lastvisible", [0, 0])
+  const lastline: number = line("$")
+  const lastvisible: list<number> = get(b:, "lastvisible", [0, 0, 0])
   # Only run this if something moved vertically on the screen
   # most likely due to folds closing/opening or simply scrolling
   if force || lastvisible[0] != lastvisibleline
            || lastvisible[1] != lvscreenrow
-    b:lastvisible = [lastvisibleline, lvscreenrow]
+           || lastvisible[2] != lastline
+    b:lastvisible = [lastvisibleline, lvscreenrow, lastline]
 
     ClearFoldHighlighting()
 
