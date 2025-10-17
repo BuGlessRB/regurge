@@ -32,6 +32,8 @@ vim9script
 # regurge_model
 # regurge_project
 # regurge_location
+# regurge_startmark		      # Default: p
+# regurge_endmark		      # Default: q
 # regurge_autofold_code: number	      # More than this many lines are folded.
 #
 # regurge_personas: dict<dict<any>>   # User-defined personas.
@@ -41,7 +43,6 @@ vim9script
 #
 # Colour profiles used:
 # RegurgeUser
-# RegurgeModel
 # RegurgeMeta
 
 # Global variable that stores total cost in $
@@ -151,6 +152,16 @@ def Regurge(...args: list<string>): void
     endif
   endfor
 
+  def Definelkey(key: string, func: string, global: bool = false): void
+    execute printf(
+             "nnoremap %s<silent> <Leader>%s <cmd>call <SID>%s<CR>",
+             global ? "" : "<buffer> ", key, func)
+  enddef
+
+  # Default is: \s to send to LLM.
+  const leader_sendkey: string = Getgvar("sendkey", "s")
+  const ourbuf: number = bufnr("%")
+
   if !foundbuffer
     # Do not create/write b: (buffer local) variables before enew.
     # If no existing buffer was found, proceed with creating a new one.
@@ -172,23 +183,23 @@ def Regurge(...args: list<string>): void
     # Define custom highlight groups for fold levels.
     # Default definitions; users can override in their vimrc.
     hi default RegurgeUser  ctermfg=Green guifg=Green
-    hi default RegurgeModel ctermfg=NONE  guifg=NONE
-    hi default RegurgeMeta  ctermfg=NONE  guifg=NONE
+    hi default RegurgeMeta  ctermfg=Cyan  guifg=Cyan
 
-    const ourbuf: number = bufnr("%")
     b:regurge_persona = persona
     # The b:regurge_persona variable is also used as a marker to check if we
     # are looking at a Regurge buffer.
     execute printf("file [%s]", persona)
 
-    # Default is: \s to send to LLM.
-    const leader_sendkey:   string = Getgvar("sendkey",   "s")
     # Default is: \r reduce the chat to only the user input.
     const leader_reducekey: string = Getgvar("reducekey", "r")
     # Default is: \R reset the chat to system instructions only.
     const leader_resetkey:  string = Getgvar("resetkey",  "R")
     # Default is: \a abort the running response.
     const leader_abortkey:  string = Getgvar("abortkey",  "a")
+    # Default is: 'p to store the start of a visual mark
+    b:startmark = Getgvar("startmark", "p")
+    # Default is: 'q to store the end of a visual mark
+    b:endmark = Getgvar("endmark",   "q")
     const personas: dict<dict<any>> = Getgvar("personas", {})
 
     var profile: dict<any>
@@ -270,12 +281,6 @@ def Regurge(...args: list<string>): void
     autocmd InsertLeave          <buffer> AutoSend()
     autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
 
-    def Definelkey(key: string, func: string): void
-      execute printf(
-               "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
-               key, func)
-    enddef
-
     Definelkey(leader_sendkey,   "SendMessageToLLM()")
     Definelkey(leader_reducekey, "ResetChat(v:false)")
     Definelkey(leader_resetkey,  "ResetChat(v:true)")
@@ -285,6 +290,7 @@ def Regurge(...args: list<string>): void
      echo printf("Type then send to %s using %s%s",
                  persona, get(g:, "mapleader", "\\"), leader_sendkey)
   endif
+  Definelkey(leader_sendkey, printf("VisualToBuffer(%d)", ourbuf), true)
 
   # Append any preset content provided.
   if append_content != ""
@@ -373,7 +379,8 @@ def ApplyFoldHighlighting(force: bool = true): void
       add(linesperlevel[min([foldlevel(lnum), 2])], lnum)
     endfor
     ColourFold("RegurgeUser", 0)
-    ColourFold("RegurgeModel", 1)
+    # We do not colour the responses, in order to maximise readability
+    # using natural markdown syntax colouring.
     ColourFold("RegurgeMeta", 2)
   endif
 enddef
@@ -398,15 +405,15 @@ def AutoSend(): void
   endif
 enddef
 
-def IsWaitingForResponse(): number
-  if !&modifiable
+def IsWaitingForResponse(ourbuf: number = 0): number
+  if ourbuf == 0 ? !&modifiable : getbufvar(ourbuf, "&modifiable")
     echohl WarningMsg | echo "Please wait for the current response..."
     return 1
   endif
   return 0
 enddef
 
-def GotToInsertModeAtEnd(): void
+def GotoInsertModeAtEnd(): void
   if IsWaitingForResponse()
     return
   endif
@@ -499,7 +506,7 @@ def SendMessageToLLM(): void
 
   def IncludeToLLM(lines: list<string>, filename: string = "",
    startlinenr: number = 0, language: string = "")
-    const foundbackticks: list<dict<any>> = matchstrlist(lines, '\C\v^```+')
+    const foundbackticks: list<dict<any>> = matchstrlist(lines, '\v^```+')
     const foundlengths: dict<number> = {}
     for cmatch in foundbackticks
       foundlengths[strlen(cmatch.text)] = 1
@@ -534,52 +541,59 @@ def SendMessageToLLM(): void
       const statement = twowords[1]
       const argument = matchlist(twowords[2], "[^\n]*")[0]
       if statement == "include"
-        if argument[0] == "!"
-          const stdoutlist: list<string> = systemlist(argument[1 : ])
-	  IncludeToLLM(stdoutlist, "stdout")
-        endif
-        if argument == "yank"
-          const lines: list<string> = getreg("0", 1, 1)
-          IncludeToLLM(lines, bufname("#"), line("'["))
-        endif
 
-	def IncludeBuffer(bufinfo: dict<any>): bool
+	def IncludeBuffer(bufnr: any,
+	                  start: any = 1, end: any = "$"): bool
+	  var bufinfo: dict<any> = type(bufnr) == v:t_number
+	                         ? getbufinfo(bufnr)[0] : bufnr
           if getbufvar(bufinfo.bufnr, "&buftype") == ""
-            const lines: list<string> = getbufline(bufinfo.bufnr, 1, "$")
-            IncludeToLLM(lines, bufinfo.name, 1)
+            const lines: list<string> = getbufline(bufinfo.bufnr, start, end)
+            IncludeToLLM(lines, bufinfo.name, start)
 	    return true
 	  endif
 	  return false
 	enddef
 
-        if argument == "buffer"
+        if argument[0] == "!"
+          const stdoutlist: list<string> = systemlist(argument[1 : ])
+	  IncludeToLLM(stdoutlist, "stdout")
+	elseif argument =~ '^visual\s'
+	  const args: list<string> =
+           matchlist(argument, '\v^\S+\s([^:]+):([^-\s]*)-([^-\s]*)')
+	  if args[0] != ""
+	    IncludeBuffer(args[1], args[2], args[3])
+	  else
+            echohl ErrorMsg |
+	     echomsg printf("Unparseable statement: %s", phrase)
+	  endif
+	elseif argument == "yank"
+          const lines: list<string> = getreg("0", 1, 1)
+          IncludeToLLM(lines, bufname("#"), line("'["))
+	elseif argument == "buffer"
 	  # Try the previous buffer first
-          if !IncludeBuffer(getbufinfo(bufnr("#"))[0])
+          if !IncludeBuffer(bufnr("#"))
 	    const jumps: list<dict<any>> = getjumplist()
 	    # Otherwise go from most recent to eldest buffers and pick the
 	    # first normal one we encounter
 	    for i in range(len(jumps), -1, -1)
-	      if IncludeBuffer(getbufinfo(jumps[i].bufnr)[0])
+	      if IncludeBuffer(jumps[i].bufnr)
 		break
 	      endif
 	    endfor
 	  endif
-        endif
-        if argument == "buffers"
+        elseif argument == "buffers"
           for bufinfo in getbufinfo({"bufloaded": 1})
             IncludeBuffer(bufinfo)
           endfor
-        endif
-        if argument == "windows"
+	elseif argument == "windows"
           const seen_buffers: dict<number> = {}
           for bufnr in tabpagebuflist(0)
             if !has_key(seen_buffers, bufnr)
               seen_buffers[bufnr] = 1
-	      IncludeBuffer(getbufinfo(bufnr)[0])
+	      IncludeBuffer(bufnr)
             endif
           endfor
-        endif
-        if argument == ""
+	elseif argument == ""
           # include all files in the current tree
         else
           # include wildcard filenames
@@ -722,7 +736,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   endif
   if finalmsg
     # Pressing a mere enter jumps to the end, new line, insert mode.
-    nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotToInsertModeAtEnd()<CR>
+    nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotoInsertModeAtEnd()<CR>
   else
     # Disable buffer modifications again while waiting for more LLM responses.
     setlocal nomodifiable
@@ -850,7 +864,7 @@ def ResetChat(fullreset: bool): void
     endif
   endwhile
   if fullreset
-    GotToInsertModeAtEnd()
+    GotoInsertModeAtEnd()
   endif
 enddef
 
@@ -879,6 +893,23 @@ def Cleanup(ourbuf: number)
     ch_setoptions(job_getchannel(job_obj), {"close_cb": ""})
     job_stop(job_obj)
   endif
+enddef
+
+def VisualToBuffer(ourbuf: number): void
+  if IsWaitingForResponse(ourbuf)
+    return
+  endif
+
+  const last_buf: number = bufnr("%")
+
+  # Store visual start/end in 'p/'q
+  setpos("'" .. b:startmark, getpos("'<"));
+  setpos("'" .. b:endmark,   getpos("'>"));
+
+  execute "buffer " .. ourbuf
+  append("$", printf("!include visual %d:'%s-'%s",
+                     last_buf, b:startmark, b:endmark))
+  GotoInsertModeAtEnd()
 enddef
 
 # Define the user command to start the chat.
