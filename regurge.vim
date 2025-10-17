@@ -130,7 +130,7 @@ def Regurge(...args: list<string>): void
 
   # Check if a buffer with this persona already exists
   for bufinfo in getbufinfo({"bufloaded": 1})
-    if has_key(bufinfo, "variables") && 
+    if has_key(bufinfo, "variables") &&
        has_key(bufinfo.variables, "regurge_persona") &&
        bufinfo.variables.regurge_persona == persona
       var foundwin: bool
@@ -263,7 +263,8 @@ def Regurge(...args: list<string>): void
     b:job_obj = null_job        # Init it, in case the buffer is wiped now.
 
     autocmd BufDelete            <buffer> Cleanup(str2nr(expand("<abuf>")))
-    autocmd WinEnter,SafeState   <buffer> ApplyFoldHighlighting()
+    autocmd BufWinEnter          <buffer> ApplyFoldHighlighting()
+    autocmd SafeState            <buffer> ApplyFoldHighlighting(false)
     autocmd BufWinLeave          <buffer> ClearFoldHighlighting()
     autocmd InsertEnter          <buffer> DisableMagicEnter()
     autocmd InsertLeave          <buffer> AutoSend()
@@ -345,24 +346,34 @@ def ClearFoldHighlighting(): void
 enddef
 
 # Function to apply fold-level-dependent highlighting to visible lines.
-def ApplyFoldHighlighting(): void
-  ClearFoldHighlighting()
+def ApplyFoldHighlighting(force: bool = true): void
+  const lastvisibleline: number = line("w$")
+  const lvscreenrow: number = screenpos(win_getid(), lastvisibleline, 1).row
+  const lastvisible: list<number> = get(b:, "lastvisible", [0, 0])
+  # Only run this if something moved vertically on the screen
+  # most likely due to folds closing/opening or simply scrolling
+  if force || lastvisible[0] != lastvisibleline
+           || lastvisible[1] != lvscreenrow
+    b:lastvisible = [lastvisibleline, lvscreenrow]
 
-  final linesperlevel: list<list<number>> = [[], [], []]
+    ClearFoldHighlighting()
 
-  def ColourFold(group: string, level: number)
-    const lines: list<number> = linesperlevel[level]
-    if !empty(lines)
-      add(w:regurge_fold_match_ids, matchaddpos(group, lines))
-    endif
-  enddef
+    final linesperlevel: list<list<number>> = [[], [], []]
 
-  for lnum in range(line("w0"), line("w$"))
-    add(linesperlevel[min([foldlevel(lnum), 2])], lnum)
-  endfor
-  ColourFold("RegurgeUser", 0)
-  ColourFold("RegurgeModel", 1)
-  ColourFold("RegurgeMeta", 2)
+    def ColourFold(group: string, level: number)
+      const lines: list<number> = linesperlevel[level]
+      if !empty(lines)
+        add(w:regurge_fold_match_ids, matchaddpos(group, lines))
+      endif
+    enddef
+
+    for lnum in range(line("w0"), lastvisibleline)
+      add(linesperlevel[min([foldlevel(lnum), 2])], lnum)
+    endfor
+    ColourFold("RegurgeUser", 0)
+    ColourFold("RegurgeModel", 1)
+    ColourFold("RegurgeMeta", 2)
+  endif
 enddef
 
 def DisableMagicEnter(): void
