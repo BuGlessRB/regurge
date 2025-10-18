@@ -183,7 +183,7 @@ def Regurge(...args: list<string>): void
     # Define custom highlight groups for fold levels.
     # Default definitions; users can override in their vimrc.
     hi default RegurgeUser  ctermfg=Green guifg=Green
-    hi default RegurgeMeta  ctermfg=Cyan  guifg=Cyan
+    hi default RegurgeMeta  ctermfg=Magenta  guifg=Magenta
 
     b:regurge_persona = persona
     # The b:regurge_persona variable is also used as a marker to check if we
@@ -642,22 +642,12 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   const ourbuf: number = bufnr("%")
   if finalmsg
     metadata[0] = printf("{%s,", resptime)
-  else
-    # Placeholder.
-    extend(metadata, [ "{" .. resptime, "}" ])
   endif
   if b:response_start_line == 0
-    append(start_line - 1, metadata)
-    end_meta_line = line("$")
-  else
-    # Insert after the first line, but before the last line of the fold.
-    append(start_line, metadata)
-    # Delete the first line of the old metadata.
-    deletebufline(ourbuf, start_line)
-    end_meta_line = start_line + len(metadata) - 1
-    # Delete the last line of the old metadata.
-    deletebufline(ourbuf, end_meta_line)
+    append(start_line - 1, [ "```json", "```"])
   endif
+  append(start_line, metadata)
+  end_meta_line = start_line + len(metadata) + 1
   var end_line: number = line("$")
   if b:response_start_line == 0
     if !finalmsg
