@@ -25,7 +25,7 @@ vim9script
 #
 # Global variables to allow for customisation from your .vimrc:
 #
-# regurge_sendkey		      # Default: s
+# regurge_querykey		      # Default: q
 # regurge_reducekey		      # Default: r
 # regurge_resetkey		      # Default: R
 # regurge_abortkey		      # Default: a
@@ -77,6 +77,8 @@ const prices: dict<list<float>> = {
   "gemini-2.5-pro":           [2.50, 10.00],
 }
 
+const noacbuf: string = "noautocmd buffer "
+
 def Getgvar(tailname: string, defval: any): any
   return get(g:, gvarprefix .. tailname, defval)
 enddef
@@ -127,7 +129,7 @@ def Regurge(...args: list<string>): void
     endif
   endif
 
-  var foundbuffer: bool
+  var ourbuf: number
 
   # Check if a buffer with this persona already exists
   for bufinfo in getbufinfo({"bufloaded": 1})
@@ -147,25 +149,19 @@ def Regurge(...args: list<string>): void
 	# Otherwise switch to this persona's buffer
         execute "buffer " .. bufinfo.bufnr
       endif
-      foundbuffer = true
+      ourbuf = bufinfo.bufnr
       break
     endif
   endfor
 
-  def Definelkey(key: string, func: string, global: bool = false): void
-    execute printf(
-             "nnoremap %s<silent> <Leader>%s <cmd>call <SID>%s<CR>",
-             global ? "" : "<buffer> ", key, func)
-  enddef
-
   # Default is: \s to send to LLM.
-  const leader_sendkey: string = Getgvar("sendkey", "s")
-  const ourbuf: number = bufnr("%")
+  const leader_querykey: string = Getgvar("querykey", "q")
 
-  if !foundbuffer
+  if ourbuf == 0
     # Do not create/write b: (buffer local) variables before enew.
     # If no existing buffer was found, proceed with creating a new one.
     enew
+    ourbuf = bufnr("%")
     setlocal noswapfile
     setlocal noundofile
     setlocal wrap
@@ -199,7 +195,7 @@ def Regurge(...args: list<string>): void
     # Default is: 'p to store the start of a visual mark
     b:startmark = Getgvar("startmark", "p")
     # Default is: 'q to store the end of a visual mark
-    b:endmark = Getgvar("endmark",   "q")
+    b:endmark   = Getgvar("endmark",   "q")
     const personas: dict<dict<any>> = Getgvar("personas", {})
 
     var profile: dict<any>
@@ -281,16 +277,30 @@ def Regurge(...args: list<string>): void
     autocmd InsertLeave          <buffer> AutoSend()
     autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
 
-    Definelkey(leader_sendkey,   "SendMessageToLLM()")
+    def Definelkey(key: string, func: string): void
+      execute printf(
+               "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
+                                                   key,              func)
+    enddef
+
+    Definelkey(leader_querykey,  "SendMessageToLLM()")
     Definelkey(leader_reducekey, "ResetChat(v:false)")
     Definelkey(leader_resetkey,  "ResetChat(v:true)")
     Definelkey(leader_abortkey,  "CancelLLMResponse()")
 
     redraw | echohl Normal |
      echo printf("Type then send to %s using %s%s",
-                 persona, get(g:, "mapleader", "\\"), leader_sendkey)
+                 persona, get(g:, "mapleader", "\\"), leader_querykey)
   endif
-  Definelkey(leader_sendkey, printf("VisualToBuffer(%d)", ourbuf), true)
+
+  def Definegkey(name: string, mode: string, key: string, func: string): void
+    execute printf("%smap <silent> <Plug>(%s) :call <SID>%s<CR>",
+                    mode,                 name,          func)
+    execute printf("%snoremap <silent> %s <Plug>(%s)", mode, key, name)
+  enddef
+
+  Definegkey("VisualToBuffer", "x", "<Leader>" .. leader_querykey,
+             printf("VisualToBuffer(%d)", ourbuf))
 
   # Append any preset content provided.
   if append_content != ""
@@ -405,12 +415,12 @@ def AutoSend(): void
   endif
 enddef
 
-def IsWaitingForResponse(ourbuf: number = 0): number
-  if ourbuf == 0 ? !&modifiable : getbufvar(ourbuf, "&modifiable")
+def IsWaitingForResponse(ourbuf: number = 0): bool
+  if !(ourbuf == 0 ? &modifiable : getbufvar(ourbuf, "&modifiable"))
     echohl WarningMsg | echo "Please wait for the current response..."
-    return 1
+    return true
   endif
-  return 0
+  return false
 enddef
 
 def GotoInsertModeAtEnd(): void
@@ -434,7 +444,8 @@ def StartShowHourglass(): void
 enddef
 
 def SendMessageToLLM(): void
-  if StartRegurgeProcess(bufnr("%")) == 0
+  const ourbuf: number = bufnr("%")
+  if StartRegurgeProcess(ourbuf) == 0
     echohl ErrorMsg | echo "Connection to regurge failed, retry later."
     return
   endif
@@ -463,8 +474,8 @@ def SendMessageToLLM(): void
     const flevel: number = foldlevel(lnum)
     if flevel == 0
       pastmeta = false
-      Flushparts("user", lnum)        # Look for markdown marker.
-    elseif flevel == 1 || pastmeta || getline(lnum) =~ '^\s*```'
+      Flushparts("user", lnum)
+    elseif flevel == 1 || pastmeta
       pastmeta = true
       Flushparts("model", lnum)
     endif
@@ -518,7 +529,7 @@ def SendMessageToLLM(): void
     const markerend: string = repeat("`", shortest)
     var markerbegin: string = markerend .. fnamemodify(filename, ":~")
     if startlinenr != 0
-      markerbegin ..= printf("%d:%d",
+      markerbegin ..= printf(":%d-%d",
                              startlinenr, startlinenr + lines->len() - 1)
     endif
     if language != ""
@@ -544,11 +555,14 @@ def SendMessageToLLM(): void
 
 	def IncludeBuffer(bufnr: any,
 	                  start: any = 1, end: any = "$"): bool
-	  var bufinfo: dict<any> = type(bufnr) == v:t_number
-	                         ? getbufinfo(bufnr)[0] : bufnr
+	  var bufinfo: dict<any> = type(bufnr) != v:t_dict
+	                         ? getbufinfo(str2nr(bufnr))[0] : bufnr
           if getbufvar(bufinfo.bufnr, "&buftype") == ""
-            const lines: list<string> = getbufline(bufinfo.bufnr, start, end)
-            IncludeToLLM(lines, bufinfo.name, start)
+	    execute noacbuf .. bufinfo.bufnr
+	    const nstart: number = line(start) ?? start
+            const lines: list<string> = getline(nstart, end)
+	    execute noacbuf .. ourbuf
+            IncludeToLLM(lines, bufinfo.name, nstart)
 	    return true
 	  endif
 	  return false
@@ -559,7 +573,7 @@ def SendMessageToLLM(): void
 	  IncludeToLLM(stdoutlist, "stdout")
 	elseif argument =~ '^visual\s'
 	  const args: list<string> =
-           matchlist(argument, '\v^\S+\s([^:]+):([^-\s]*)-([^-\s]*)')
+           matchlist(argument, '\v^\S+\s+([^\s:]+):([^-\s]*)-([^-\s]*)')
 	  if args[0] != ""
 	    IncludeBuffer(args[1], args[2], args[3])
 	  else
@@ -773,15 +787,14 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     AppendLLMResponse(model_response_text, model_metadata, true)
   else
     const original_pos: list<number> = getcurpos()[1 : ]
-    const noa_b: string = "noautocmd buffer "
     try
       # Switch to the target buffer to perform updates.
-      execute noa_b .. ourbuf
+      execute noacbuf .. ourbuf
       AppendLLMResponse(model_response_text, model_metadata, false)
     catch
     finally
       # Always try to return to the buffer the user was in.
-      execute noa_b .. original_buf
+      execute noacbuf .. original_buf
       cursor(original_pos)
     endtry
   endif
@@ -886,19 +899,27 @@ def Cleanup(ourbuf: number)
 enddef
 
 def VisualToBuffer(ourbuf: number): void
+  const curline: number = line(".")
+  const endline: number = line("'>")
+  # We are being called linewise, we only need to run once.
+  if curline < endline
+    return		# TODO Is there really no better way to handle this?
+  endif
   if IsWaitingForResponse(ourbuf)
     return
   endif
 
   const last_buf: number = bufnr("%")
 
+  const startmark: string = getbufvar(ourbuf, "startmark")
+  const endmark:   string = getbufvar(ourbuf, "endmark")
   # Store visual start/end in 'p/'q
-  setpos("'" .. b:startmark, getpos("'<"));
-  setpos("'" .. b:endmark,   getpos("'>"));
+  setpos("'" .. startmark, getpos("'<"))
+  setpos("'" .. endmark,   getpos("'>"))
 
   execute "buffer " .. ourbuf
   append("$", printf("!include visual %d:'%s-'%s",
-                     last_buf, b:startmark, b:endmark))
+                     last_buf, startmark, endmark))
   GotoInsertModeAtEnd()
 enddef
 
