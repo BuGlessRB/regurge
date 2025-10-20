@@ -227,11 +227,10 @@ def Regurge(...args: list<string>): void
     var configfold: list<string>
     for [key, value] in items(systemconfig)
       if type(value) == v:t_list
-        final mylist: list<string> = value[ : ]
+        var mylist: list<string> = value[ : ]
         add(configfold, key .. ":")
-        for i in range(len(mylist))
-          mylist[i] = substitute(mylist[i], '[`\\]', '\\&', "g")
-        endfor
+	# Escape anything sensitive
+	mylist->map((_, v) => substitute(v, '[`\\]', '\\&', "g"))
         mylist[0] = "`" .. mylist[0]
         mylist[-1] = mylist[-1] .. "`,"
         extend(configfold, mylist)
@@ -241,8 +240,10 @@ def Regurge(...args: list<string>): void
            && key != "model" ? value : json_encode(value))))
       endif
     endfor
+    append(0, "```json")      # Enclose the configfold in ```json and ```
+    add(configfold, "```")    # to prevent accidental syntaxcolourbleeds.
     # Fill the first fold with the config and system instructions.
-    append(0, configfold)
+    append(1, configfold)
     execute ":1,$-1fold"
     execute ":1foldclose"
 
@@ -461,6 +462,9 @@ def SendMessageToLLM(): void
 
   def Flushparts(newrole: string, lnum: number)
     if role != newrole && !empty(text_lines)
+      if empty(history) && role == "model"	  # configfold
+	text_lines = text_lines[1 : -2]		  # Strip enclosing ```s
+      endif
       add(history, {
        "role": role, "parts": [{"text": join(text_lines, "\n")}]})
       text_lines = []
