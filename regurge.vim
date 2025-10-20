@@ -299,7 +299,7 @@ def Regurge(...args: list<string>): void
     execute printf("%snoremap <silent> %s <Plug>(%s)", mode, key, name)
   enddef
 
-  Definegkey("VisualToBuffer", "x", "<Leader>" .. leader_querykey,
+  Definegkey("VisualToBuffer", "v", "<Leader>" .. leader_querykey,
              printf("VisualToBuffer(%d)", ourbuf))
 
   # Append any preset content provided.
