@@ -19,6 +19,7 @@ let project = process.env.GOOGLE_CLOUD_PROJECT
 let location = "global";
 
 const readline = require("readline");
+const https = require('https');
 const {
   HarmBlockMethod,
   HarmBlockThreshold,
@@ -143,6 +144,8 @@ const interactiveconfig = {
   // logprobs: 4,  // Show the four runners up alternative probs
 };
 
+const regexgoogleurl = /^https:\/\/[^\/]*\.google\.com\//;
+
 function showusage(msg) {
   console.error(msg);
   process.exit(64);
@@ -174,6 +177,20 @@ const gen_ai = new GoogleGenAI({
 
 const isVerboseMode = process.argv.includes("-v");
 const isJsonMode = process.argv.includes("-j");
+
+function getFirstRedirectUrl(initialUrl) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(initialUrl, { method: "HEAD" }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
+        resolve(res.headers.location);
+      else
+        resolve(initialUrl);
+      res.resume(); // Consume response data to free up memory
+    });
+    req.on("error", (e) => reject(e));
+    req.end();
+  });
+}
 
 /**
  * Calls the Vertex AI Gemini model with the provided conversation contents.
@@ -257,8 +274,19 @@ async function* sendtoLLM(config, contents) {
 	  };
 	  if (finishreason !== "STOP")
 	    meta.finishReason = finishreason;
-	  if (grounding && Object.keys(grounding).length)
+	  if (grounding && Object.keys(grounding).length) {
+	    const futures = [];
+	    // Replace with the real urls in parallel
+	    for (const chunk of grounding.groundingChunks) {
+	      let uri = chunk.web.uri;
+              if (uri.match(regexgoogleurl))
+                futures.push(chunk.web.uri = getFirstRedirectUrl(uri));
+	    }
+	    await Promise.all(futures);
+	    for (const chunk of grounding.groundingChunks)
+	      chunk.web.uri = await chunk.web.uri;
             meta.groundingMetadata = grounding;
+	  }
           fullResponse.push({"usageMetadata": JSON.stringify(meta, null, 2)});
 	}
       }

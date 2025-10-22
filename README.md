@@ -12,8 +12,10 @@ regurge has the following features:
 - Streaming responses (even in JSON mode).
 
 regurge.vim supports:
+- Automatic and explicit contexts through !include directives.
+- Dynamic contexts through captured shell output.
 - Streaming responses.
-- Multiple conversations (one per buffer).
+- Multiple conversations (one persona per buffer, multiple buffers).
 - Fully editable history, to mold the scope the LLM sees.
 - Full power of vim available to copy/paste from/into LLM conversations.
 - No pesky delimiters which cloud the answers.
@@ -23,6 +25,7 @@ regurge.vim supports:
 - Supports naming the process.
 - Supports providing/altering system instructions in the first fold.
 - All configuration constants are tweakable in the first fold.
+- Automatic search-engine (Google) grounding with inline references.
 - Session cost accounting.
 
 ## Requirements
@@ -34,6 +37,7 @@ Vim9
 
 Simply drop regurge in your path and load regurge.vim.
 - Start the conversation using `:R [persona]`
+- Use `\q` from visual mode to autoinclude context.
 - When exiting insert mode, it autodetects if it can send to the LLM.
 - Use `\q` to query the LLM explicitly.
 - Use `\r` to reduce the conversation to only your questions.

@@ -836,7 +836,11 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 	  else
 	    baseline -= 1     # We append below, so back up one line.
 	  endif
-	  append(baseline, printf("[%s](%s)", "text", "url"))
+	  for idx in segment.groundingChunkIndices
+	    const mychunk: dict<any> = chunks[idx].web
+	    append(baseline, printf("[%s](%s)", mychunk.title, mychunk.uri))
+	    baseline += 1
+	  endfor
 	endfor
         execute noacbuf .. original_buf
       endif
