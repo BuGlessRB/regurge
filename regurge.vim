@@ -7,7 +7,7 @@ vim9script
  # License: ISC OR GPL-3.0
 # Sponsored by: Cubic Circle, The Netherlands
 
-# Start using :R [persona] or :Regurge [persona], then send using \s
+# Start using :R [persona] or :Regurge [persona], then send using \q
 # It starts in insert mode.  When you leave insert mode it autosends.
 # Pressing enter jumps you down, into insert mode.
 # zo opens a fold.
@@ -154,7 +154,7 @@ def Regurge(...args: list<string>): void
     endif
   endfor
 
-  # Default is: \s to send to LLM.
+  # Default is: \q to send to LLM.
   const leader_querykey: string = Getgvar("querykey", "q")
 
   if ourbuf == 0
