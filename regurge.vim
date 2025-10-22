@@ -559,11 +559,13 @@ def SendMessageToLLM(): void
 
 	def IncludeBuffer(bufnr: any,
 	                  start: any = 1, end: any = "$"): bool
-	  var bufinfo: dict<any> = type(bufnr) != v:t_dict
-	                         ? getbufinfo(str2nr(bufnr))[0] : bufnr
-          if getbufvar(bufinfo.bufnr, "&buftype") == ""
+	  var bufinfo: dict<any> = type(bufnr) == v:t_dict ? bufnr
+	                         : getbufinfo(type(bufnr) == v:t_string
+				             ? str2nr(bufnr) : bufnr)[0]
+          if bufinfo.loaded != 0 && getbufvar(bufinfo.bufnr, "&buftype") == ""
 	    execute noacbuf .. bufinfo.bufnr
-	    const nstart: number = line(start) ?? start
+	    const nstart: number = type(start) == v:t_string
+	                         ? line(start) : start
             const lines: list<string> = getline(nstart, end)
 	    execute noacbuf .. ourbuf
             IncludeToLLM(lines, bufinfo.name, nstart)
@@ -590,10 +592,10 @@ def SendMessageToLLM(): void
 	elseif argument == "buffer"
 	  # Try the previous buffer first
           if !IncludeBuffer(bufnr("#"))
-	    const jumps: list<dict<any>> = getjumplist()
+	    const jumps: list<any> = getjumplist()[0]
 	    # Otherwise go from most recent to eldest buffers and pick the
 	    # first normal one we encounter
-	    for i in range(len(jumps), -1, -1)
+	    for i in range(len(jumps) - 1, 0, -1)
 	      if IncludeBuffer(jumps[i].bufnr)
 		break
 	      endif
