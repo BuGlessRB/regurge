@@ -592,7 +592,7 @@ def SendMessageToLLM(): void
 	elseif argument == "buffer"
 	  # Try the previous buffer first
           if !IncludeBuffer(bufnr("#"))
-	    const jumps: list<any> = getjumplist()[0]
+	    const jumps: list<dict<any>> = getjumplist()[0]
 	    # Otherwise go from most recent to eldest buffers and pick the
 	    # first normal one we encounter
 	    for i in range(len(jumps) - 1, 0, -1)
@@ -643,8 +643,43 @@ def SendMessageToLLM(): void
   setlocal nomodified
 enddef
 
-def AppendLLMResponse(response: list<string>, metadata: list<string>,
-                 active: bool): void
+def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
+  # Callback function for stdout from the regurge process.
+  if !bufexists(ourbuf)   # guard against race conditions.
+    return
+  endif
+
+  var json_parts: list<any>
+
+  try
+    json_parts = json_decode(join(
+                  getbufvar(ourbuf, "partial_msg", [])->add(msg), ""))
+    if empty(json_parts)
+      throw "E491:"
+    endif
+  catch /E49[1-9]:/
+    if StartRegurgeProcess(ourbuf) == 1
+      return               # Wait for a complete msg.
+    else
+      echohl ErrorMsg | echo "Connection to regurge failed, retry later."
+      json_parts = []
+    endif
+  endtry
+
+  var response: list<string>
+  var metadata: list<string>
+  for part in json_parts
+    if has_key(part, "text")
+      extend(response, [part.text])
+    elseif has_key(part, "usageMetadata")
+      extend(metadata, split(part.usageMetadata, "\n", 1))
+    endif
+  endfor
+  response = split(join(response, ""), "\n", 1)
+
+  const original_buf: number = bufnr("%")
+
+  execute noacbuf .. ourbuf
   b:partial_msg = []	      # Received whole message, so clear it.
   const finalmsg = !empty(metadata)
   if finalmsg
@@ -659,7 +694,6 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   var end_meta_line: number
   const resptime: string = printf(" \"ResponseTime\": %.0f ",
                             reltimefloat(reltime(b:start_time)) * 1000)
-  const ourbuf: number = bufnr("%")
   if finalmsg
     metadata[0] = printf("{%s,", resptime)
   endif
@@ -670,9 +704,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
   end_meta_line = start_line + len(metadata) + 1
   var end_line: number = line("$")
   if b:response_start_line == 0
-    if !finalmsg
-      add(response, "...")
-    endif
+    add(response, "...")	  # Add always
     append(end_line, response)
   else
     # Insert just before the ... trailing line.
@@ -680,10 +712,6 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     append(end_line, response)
     setline(end_line, [getline(end_line) .. getline(end_line + 1)])
     deletebufline(ourbuf, end_line + 1)
-    if finalmsg
-      # Delete ... trailer.
-      deletebufline(ourbuf, line("$"))
-    endif
   endif
   end_line = line("$")
 
@@ -733,7 +761,7 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     endwhile
   endif
 
-  if active
+  if ourbuf == original_buf
     ApplyFoldHighlighting()
   endif
   if b:response_start_line == 0
@@ -751,62 +779,10 @@ def AppendLLMResponse(response: list<string>, metadata: list<string>,
     # Disable buffer modifications again while waiting for more LLM responses.
     setlocal nomodifiable
   endif
-enddef
+  execute noacbuf .. original_buf
 
-def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
-  # Callback function for stdout from the regurge process.
-  if !bufexists(ourbuf)   # guard against race conditions.
-    return
-  endif
-
-  var json_parts: list<any>
-
-  try
-    json_parts = json_decode(join(
-                  getbufvar(ourbuf, "partial_msg", [])->add(msg), ""))
-    if empty(json_parts)
-      throw "E491:"
-    endif
-  catch /E49[1-9]:/
-    if StartRegurgeProcess(ourbuf) == 1
-      return               # Wait for a complete msg.
-    else
-      echohl ErrorMsg | echo "Connection to regurge failed, retry later."
-      json_parts = []
-    endif
-  endtry
-
-  var model_response_text: list<string>
-  var model_metadata: list<string>
-  for part in json_parts
-    if has_key(part, "text")
-      extend(model_response_text, [part.text])
-    elseif has_key(part, "usageMetadata")
-      extend(model_metadata, split(part.usageMetadata, "\n", 1))
-    endif
-  endfor
-  model_response_text = split(join(model_response_text, ""), "\n", 1)
-
-  const original_buf: number = bufnr("%")
-
-  if ourbuf == original_buf
-    AppendLLMResponse(model_response_text, model_metadata, true)
-  else
-    const original_pos: list<number> = getcurpos()[1 : ]
-    try
-      # Switch to the target buffer to perform updates.
-      execute noacbuf .. ourbuf
-      AppendLLMResponse(model_response_text, model_metadata, false)
-    catch
-    finally
-      # Always try to return to the buffer the user was in.
-      execute noacbuf .. original_buf
-      cursor(original_pos)
-    endtry
-  endif
-
-  if !empty(model_metadata)
-    const struct_metadata: dict<any> = json_decode(join(model_metadata))
+  if !empty(metadata)
+    const struct_metadata: dict<any> = json_decode(join(metadata))
     const model = has_key(struct_metadata, "modelVersion")
                 ? struct_metadata.modelVersion : ""
     const bmodel = getbufvar(ourbuf, "model", "")
@@ -833,6 +809,43 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
                  getbufvar(ourbuf, "regurge_persona"), ourbuf,
                  struct_metadata.ResponseTime,
 		 cost_old, cost_inc, g:regurge_cost)
+
+    if has_key(struct_metadata, "groundingMetadata")
+      const grounding: dict<any> = struct_metadata.groundingMetadata
+      if has_key(grounding, "groundingSupports")
+        const search: list<string> = grounding.webSearchQueries
+        const chunks: list<dict<any>> = grounding.groundingChunks
+	const supports: list<dict<any>> = grounding.groundingSupports
+        execute noacbuf .. ourbuf
+	const startoffset: number = line2byte(end_meta_line + 1)
+	# Assume they are presented in ascending byteoffset order,
+	# go through them from back to front.
+        for i in range(supports->len() - 1, 0, -1)
+          const segment: dict<any> = supports[i]
+	  const totaloffset: number = startoffset + segment.segment.endIndex
+          var baseline: number = byte2line(totaloffset)
+	  const basecol: number = totaloffset - line2byte(baseline)
+	  if basecol > 0
+	    const cline: string = getline(baseline)
+	    # Only split if we have a partial line.
+	    if strlen(cline) > basecol + 1
+	      # Split line.
+              append(baseline, cline[basecol : ])
+              setline(baseline, cline[ : basecol - 1])
+	    endif
+	  else
+	    baseline -= 1     # We append below, so back up one line.
+	  endif
+	  append(baseline, printf("[%s](%s)", "text", "url"))
+	endfor
+        execute noacbuf .. original_buf
+      endif
+    endif
+  endif
+
+  if finalmsg
+    # Delete ... trailer.
+    deletebufline(ourbuf, line("$"))
   endif
 enddef
 
