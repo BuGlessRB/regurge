@@ -275,16 +275,18 @@ async function* sendtoLLM(config, contents) {
 	  if (finishreason !== "STOP")
 	    meta.finishReason = finishreason;
 	  if (grounding && Object.keys(grounding).length) {
-	    const futures = [];
-	    // Replace with the real urls in parallel
-	    for (const chunk of grounding.groundingChunks) {
-	      let uri = chunk.web.uri;
-              if (uri.match(regexgoogleurl))
-                futures.push(chunk.web.uri = getFirstRedirectUrl(uri));
+	    if (grounding.groundingChunks) {
+	      const futures = [];
+	      // Replace with the real urls in parallel
+	      for (const chunk of grounding.groundingChunks) {
+	        let uri = chunk.web.uri;
+                if (uri.match(regexgoogleurl))
+                  futures.push(chunk.web.uri = getFirstRedirectUrl(uri));
+	      }
+	      await Promise.all(futures);
+	      for (const chunk of grounding.groundingChunks)
+	        chunk.web.uri = await chunk.web.uri;
 	    }
-	    await Promise.all(futures);
-	    for (const chunk of grounding.groundingChunks)
-	      chunk.web.uri = await chunk.web.uri;
             meta.groundingMetadata = grounding;
 	  }
           fullResponse.push({"usageMetadata": JSON.stringify(meta, null, 2)});

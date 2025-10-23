@@ -181,6 +181,10 @@ def Regurge(...args: list<string>): void
     hi default RegurgeUser  ctermfg=Green guifg=Green
     hi default RegurgeMeta  ctermfg=Magenta  guifg=Magenta
 
+    b:divertbuf = 0
+    # We start with an empty summary. It can be filled by the user or
+    # by the LLM.  It is saved and restored per chatsession.
+    b:summary = ""
     b:regurge_persona = persona
     # The b:regurge_persona variable is also used as a marker to check if we
     # are looking at a Regurge buffer.
@@ -442,7 +446,6 @@ def StartShowHourglass(): void
   # Make this a local variable, so that repeated ShowHourglass() calls
   # use the constant value from this closure.
   const ourbuf: number = bufnr("%")
-  b:start_time = reltime()
   # Start the timer for the waiting message.
   b:timer_id = timer_start(1000,
                 (id) => ShowHourglass(ourbuf, id), {"repeat": -1})
@@ -481,6 +484,21 @@ def BuildHistory(): list<dict<any>>
   Flushparts("", 0)
 
   return history
+enddef
+
+def SendHistory(history: list<dict<any>>): void
+  if history[0].role == "model"
+    const modelinfold: string =
+     matchstr(history[0].parts[0].text, '\s\s*model:\s*"\zs[^"]\+\ze",')
+    if modelinfold != ""
+      b:model = modelinfold
+    endif
+  endif
+
+  b:response_start_line = 0
+  b:start_time = reltime()
+  # Send the JSON history to the stdin of the regurge process.
+  ch_sendraw(job_getchannel(b:job_obj), json_encode(history) .. "\n")
 enddef
 
 def SendMessageToLLM(): void
@@ -632,24 +650,11 @@ def SendMessageToLLM(): void
     endif
   endfor
 
-  if history[0].role == "model"
-    const modelinfold: string =
-     matchstr(history[0].parts[0].text, '\s\s*model:\s*"\zs[^"]\+\ze",')
-    if modelinfold != ""
-      b:model = modelinfold
-    endif
-  endif
-
+  StartShowHourglass()
   # Disable buffer modifications while waiting for the LLM response.
   setlocal nomodifiable
-
-  StartShowHourglass()
-
-  b:response_start_line = 0
-  # Send the JSON history to the stdin of the regurge process.
-  ch_sendraw(job_getchannel(b:job_obj), json_encode(history) .. "\n")
+  SendHistory(history)
   echohl Normal | echo "Sent message to regurge..."
-
   setlocal nomodified
 enddef
 
@@ -691,29 +696,36 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 
   execute noacbuf .. ourbuf
   b:partial_msg = []	      # Received whole message, so clear it.
-  const finalmsg = !empty(metadata)
-  if finalmsg
-    timer_stop(b:timer_id)
-    # Clear the status field (only visible if the buffer is active).
-    redraw | echohl Normal | echo ""
-  endif
-
-  setlocal modifiable
-
-  const start_line: number = b:response_start_line ?? line("$") + 1
-  var end_meta_line: number
   const resptime: string = printf(" \"ResponseTime\": %.0f ",
                             reltimefloat(reltime(b:start_time)) * 1000)
+  const response_start_line: number = b:response_start_line
+  const divertbuf: number = b:divertbuf
+  const receivebuf: number = divertbuf ?? ourbuf
+  const finalmsg = !empty(metadata)
+
+  if divertbuf == 0
+    if finalmsg
+      timer_stop(b:timer_id)
+      # Clear the status field (only visible if the buffer is active).
+      redraw | echohl Normal | echo ""
+    endif
+  else
+    execute noacbuf .. receivebuf
+  endif
+  setlocal modifiable
+
+  const start_line: number = response_start_line ?? line("$") + 1
+  var end_meta_line: number
   if finalmsg
     metadata[0] = printf("{%s,", resptime)
   endif
-  if b:response_start_line == 0
+  if response_start_line == 0
     append(start_line - 1, [ "```json", "```"])
   endif
   append(start_line, metadata)
   end_meta_line = start_line + len(metadata) + 1
   var end_line: number = line("$")
-  if b:response_start_line == 0
+  if response_start_line == 0
     add(response, "...")	  # Add always
     append(end_line, response)
   else
@@ -721,11 +733,11 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     end_line -= 1
     append(end_line, response)
     setline(end_line, [getline(end_line) .. getline(end_line + 1)])
-    deletebufline(ourbuf, end_line + 1)
+    deletebufline(receivebuf, end_line + 1)
   endif
   end_line = line("$")
 
-  if b:response_start_line == 0
+  if response_start_line == 0
     const cmdprefix: string = ":" .. start_line
 
     def Dofoldop(cmdtail: string): void
@@ -744,7 +756,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     endif
   endif
 
-  if finalmsg
+  if divertbuf == 0 && finalmsg
     # Fold first-level markdown quoted code snippets.
     var lnum: number = end_meta_line
     var lstart: number
@@ -771,11 +783,11 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     endwhile
   endif
 
-  if ourbuf == original_buf
+  if receivebuf == original_buf
     ApplyFoldHighlighting()
   endif
-  if b:response_start_line == 0
-    b:response_start_line = start_line
+  if response_start_line == 0
+    setbufvar(ourbuf, "response_start_line", start_line)
     # Ensure the screen updates and scrolls to the new content.
     cursor(start_line - 1, 1)
     normal! zt
@@ -789,13 +801,14 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     # Disable buffer modifications again while waiting for more LLM responses.
     setlocal nomodifiable
   endif
-  execute noacbuf .. original_buf
+
+  var statusupdate: string
 
   if !empty(metadata)
     const struct_metadata: dict<any> = json_decode(join(metadata))
     const model = has_key(struct_metadata, "modelVersion")
                 ? struct_metadata.modelVersion : ""
-    const bmodel = getbufvar(ourbuf, "model", "")
+    const bmodel = getbufvar(receivebuf, "model", "")
     # If we cannot find the model in our pricelist, provide the most expensive
     # guess instead.
     const modelprices: list<float> =
@@ -813,55 +826,73 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     const cost_old: float = get(g:, "regurge_cost", 0.0)
     g:regurge_cost = cost_old + cost_inc
 
-    # This echo will appear in the original buffer.
-    echohl Normal |
-     echo printf("%s %d, ResponseTime: %d  $%.5f + $%.5f = $%.02f",
-                 getbufvar(ourbuf, "regurge_persona"), ourbuf,
-                 struct_metadata.ResponseTime,
-		 cost_old, cost_inc, g:regurge_cost)
-
-    if has_key(struct_metadata, "groundingMetadata")
-      const grounding: dict<any> = struct_metadata.groundingMetadata
-      if has_key(grounding, "groundingSupports")
-        const search: list<string> = grounding.webSearchQueries
-        const chunks: list<dict<any>> = grounding.groundingChunks
-	const supports: list<dict<any>> = grounding.groundingSupports
-        execute noacbuf .. ourbuf
-	const startoffset: number = line2byte(end_meta_line + 1)
-	# Assume they are presented in ascending byteoffset order,
-	# go through them from back to front, otherwise we would
-	# affect the byte-offsets from the start of the response
-	# when inserting references.
-        for i in range(supports->len() - 1, 0, -1)
-          const segment: dict<any> = supports[i]
-	  const totaloffset: number = startoffset + segment.segment.endIndex
-          var baseline: number = byte2line(totaloffset)
-	  const basecol: number = totaloffset - line2byte(baseline)
-	  if basecol > 0
-	    const cline: string = getline(baseline)
-	    # Only split if we have a partial line.
-	    if strlen(cline) > basecol + 1
-	      # Split line.
-              append(baseline, cline[basecol : ])
-              setline(baseline, cline[ : basecol - 1])
-	    endif
-	  else
-	    baseline -= 1     # Append below the previous line
-	  endif
-	  for idx in segment.groundingChunkIndices
-	    const mychunk: dict<any> = chunks[idx].web
-	    append(baseline, $"[{mychunk.title}]({mychunk.uri})")
-	    baseline += 1     # Maintain order of chunks
-	  endfor
-	endfor
-        execute noacbuf .. original_buf
+    if divertbuf == 0
+      if has_key(struct_metadata, "groundingMetadata")
+        const grounding: dict<any> = struct_metadata.groundingMetadata
+        if has_key(grounding, "groundingSupports")
+          const search: list<string> = grounding.webSearchQueries
+          const chunks: list<dict<any>> = grounding.groundingChunks
+          const supports: list<dict<any>> = grounding.groundingSupports
+          const startoffset: number = line2byte(end_meta_line + 1)
+          # Assume they are presented in ascending byteoffset order,
+          # go through them from back to front, otherwise we would
+          # affect the byte-offsets from the start of the response
+          # when inserting references.
+          for i in range(supports->len() - 1, 0, -1)
+            const segment: dict<any> = supports[i]
+            const totaloffset: number = startoffset + segment.segment.endIndex
+            var baseline: number = byte2line(totaloffset)
+            const basecol: number = totaloffset - line2byte(baseline)
+            if basecol > 0
+              const cline: string = getline(baseline)
+              # Only split if we have a partial line.
+              if strlen(cline) > basecol + 1
+                # Split line.
+                append(baseline, cline[basecol : ])
+                setline(baseline, cline[ : basecol - 1])
+              endif
+            else
+              baseline -= 1     # Append below the previous line
+            endif
+            for idx in segment.groundingChunkIndices
+              const mychunk: dict<any> = chunks[idx].web
+              append(baseline, $"[{mychunk.title}]({mychunk.uri})")
+              baseline += 1     # Maintain order of chunks
+            endfor
+          endfor
+        endif
       endif
+      statusupdate = printf("%s %d, ResponseTime: %d  $%.5f + $%.5f = $%.02f",
+                            getbufvar(ourbuf, "regurge_persona"), ourbuf,
+                            struct_metadata.ResponseTime,
+                            cost_old, cost_inc, g:regurge_cost)
     endif
   endif
 
   if finalmsg
     # Delete ... trailer.
-    deletebufline(ourbuf, line("$"))
+    deletebufline(receivebuf, line("$"))
+    if divertbuf != 0
+      var lstart: number
+      var lnum: number = 2        # Skip the first empty line
+      const lend: number = line("$")
+      while lnum <= lend
+	if foldlevel(lnum) == 1
+	  lstart = lnum
+	  break
+	endif
+        lnum += 1
+      endwhile
+      getbufvar(ourbuf, "divertdone")(join(getline(lstart, lend), "\n"))
+      execute "bwipeout " .. receivebuf
+      setbufvar(ourbuf, "divertbuf", 0)
+    endif
+  endif
+
+  execute noacbuf .. original_buf
+  if statusupdate != ""
+    # This echo will appear in the original buffer.
+    echohl Normal | echo statusupdate
   endif
 enddef
 
@@ -959,18 +990,61 @@ def VisualToBuffer(ourbuf: number): void
   GotoInsertModeAtEnd()
 enddef
 
+def CreateTempBuf(name: string = ""): number
+  var newname: string = name
+  if newname == ""
+    newname = printf("[tmp-%s]", reltimestr(reltime()))
+  endif
+  const bufnr: number = bufadd(newname)
+  bufload(bufnr)
+  setbufvar(bufnr, "&buftype", "nofile")
+  return bufnr
+enddef
+
 def CustomWrite(line1: number, line2: number, bang: string, mods: string,
                 file: string = "")
   if line1 != 1 || line2 != line("$")
     execute $"{mods}silent {line1},{line2}write{bang}{file}"
   else
-    var history: string = json_encode(BuildHistory())
+    if IsWaitingForResponse()
+      return
+    endif
+    if file != "" && bang != "!" && getfsize(file) > 0
+      echohl ErrorMsg |
+       echom "Error: File exists and is not empty.  Use ! to overwrite."
+      return
+    endif
+    const ourbuf: number = bufnr("%")
+    final history: list<dict<any>> = BuildHistory()
+    # TODO Query LLM:
+    # Make this two lines, so we can do a quick-file read of the initial line
+    # and scoop up all relevant meta information.
+    const regurge_persona: string = b:regurge_persona
+    def WriteFile(summary: string)
+      setbufvar(ourbuf, "summary", summary)
+      call writefile([
+        json_encode({
+          "regurge_persona": regurge_persona,
+          "summary":         summary,
+        }),
+        json_encode(history),
+      ], file)
+      echo $"Saved chatsession to {file}"
+    enddef
+
     if file != ""
-      if bang != "!" && getfsize(file) > 0
-        echohl ErrorMsg |
-         echom "Error: File exists and is not empty. Use ! to overwrite."
+      if b:summary != ""
+	WriteFile(b:summary)
       else
-        call writefile([history], file)
+        StartRegurgeProcess(bufnr("%"))
+	b:divertbuf = CreateTempBuf()
+	b:divertdone = WriteFile
+        add(history, {
+         "role": "user", "parts":
+	   [{"text": "Provide one-line topic of this session."}]
+	})
+	SendHistory(history)
+	remove(history, -1)     # Clean it again, for saving later
       endif
     else
       # TODO
