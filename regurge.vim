@@ -829,7 +829,9 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
         execute noacbuf .. ourbuf
 	const startoffset: number = line2byte(end_meta_line + 1)
 	# Assume they are presented in ascending byteoffset order,
-	# go through them from back to front.
+	# go through them from back to front, otherwise we would
+	# affect the byte-offsets from the start of the response
+	# when inserting references.
         for i in range(supports->len() - 1, 0, -1)
           const segment: dict<any> = supports[i]
 	  const totaloffset: number = startoffset + segment.segment.endIndex
@@ -844,12 +846,12 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
               setline(baseline, cline[ : basecol - 1])
 	    endif
 	  else
-	    baseline -= 1     # We append below, so back up one line.
+	    baseline -= 1     # Append below the previous line
 	  endif
 	  for idx in segment.groundingChunkIndices
 	    const mychunk: dict<any> = chunks[idx].web
 	    append(baseline, $"[{mychunk.title}]({mychunk.uri})")
-	    baseline += 1
+	    baseline += 1     # Maintain order of chunks
 	  endfor
 	endfor
         execute noacbuf .. original_buf
