@@ -184,7 +184,7 @@ def Regurge(...args: list<string>): void
     b:regurge_persona = persona
     # The b:regurge_persona variable is also used as a marker to check if we
     # are looking at a Regurge buffer.
-    execute printf("file [%s]", persona)
+    execute $"file [{persona}]"
 
     # Default is: \r reduce the chat to only the user input.
     const leader_reducekey: string = Getgvar("reducekey", "r")
@@ -218,7 +218,7 @@ def Regurge(...args: list<string>): void
       { "systemInstruction":
          extend(profile.config.systemInstruction[ : ],
                 # Extend system instructions with persona name.
-                [ printf("Your name is '%s'.", persona) ]) })
+                [ $"Your name is '{persona}'." ]) })
 
     if has_key(systemconfig, "model")
       b:model = systemconfig.model
@@ -279,15 +279,19 @@ def Regurge(...args: list<string>): void
     autocmd CmdlineEnter         <buffer> timer_stop(get(b:, "timer_id", 0))
 
     def Definelkey(key: string, func: string): void
-      execute printf(
-               "nnoremap <buffer> <silent> <Leader>%s <cmd>call <SID>%s<CR>",
-                                                   key,              func)
+      execute
+       \ $"nnoremap <buffer> <silent> <Leader>{key} <cmd>call <SID>{func}<CR>"
     enddef
 
     Definelkey(leader_querykey,  "SendMessageToLLM()")
     Definelkey(leader_reducekey, "ResetChat(v:false)")
     Definelkey(leader_resetkey,  "ResetChat(v:true)")
     Definelkey(leader_abortkey,  "CancelLLMResponse()")
+
+    command! -buffer -range=% -nargs=? -bar -complete=file -bang W
+     \ call CustomWrite(<line1>, <line2>, <q-bang>, <q-mods>, <f-args>)
+    cnoreabbrev <buffer> <expr> w
+     \ getcmdtype() == ":" && getcmdpos() == 2 ? "W" : "w"
 
     redraw | echohl Normal |
      echo printf("Type then send to %s using %s%s",
@@ -301,7 +305,7 @@ def Regurge(...args: list<string>): void
   enddef
 
   Definegkey("VisualToBuffer", "v", "<Leader>" .. leader_querykey,
-             printf("VisualToBuffer(%d)", ourbuf))
+             $"VisualToBuffer({ourbuf})")
 
   # Append any preset content provided.
   if append_content != ""
@@ -322,7 +326,7 @@ def StartRegurgeProcess(ourbuf: number): number
   var job_obj: job = getbufvar(ourbuf, "job_obj")
   if job_status(job_obj) != "run"
     if job_status(job_obj) == "dead"
-      echomsg printf("regurge process [%d] died, restarting it...", ourbuf)
+      echomsg $"regurge process [{ourbuf}] died, restarting it..."
     endif
     # Start the regurge process in JSON mode.
     job_obj = job_start(getbufvar(ourbuf, "helper"), {
@@ -444,17 +448,7 @@ def StartShowHourglass(): void
                 (id) => ShowHourglass(ourbuf, id), {"repeat": -1})
 enddef
 
-def SendMessageToLLM(): void
-  const ourbuf: number = bufnr("%")
-  if StartRegurgeProcess(ourbuf) == 0
-    echohl ErrorMsg | echo "Connection to regurge failed, retry later."
-    return
-  endif
-  # Function to send the current user message and entire history to regurge.
-  if IsWaitingForResponse()
-    return
-  endif
-
+def BuildHistory(): list<dict<any>>
   # Parse the entire buffer to get the complete chat history.
   var history: list<dict<any>>
   var text_lines: list<string>
@@ -485,6 +479,22 @@ def SendMessageToLLM(): void
     endif
   endfor
   Flushparts("", 0)
+
+  return history
+enddef
+
+def SendMessageToLLM(): void
+  # Function to send the current user message and entire history to regurge.
+  const ourbuf: number = bufnr("%")
+  if StartRegurgeProcess(ourbuf) == 0
+    echohl ErrorMsg | echo "Connection to regurge failed, retry later."
+    return
+  endif
+  if IsWaitingForResponse()
+    return
+  endif
+
+  var history: list<dict<any>> = BuildHistory()
 
   if empty(history) || history[-1].role != "user"
     return    # Nothing to send.
@@ -584,7 +594,7 @@ def SendMessageToLLM(): void
 	    IncludeBuffer(args[1], args[2], args[3])
 	  else
             echohl ErrorMsg |
-	     echomsg printf("Unparseable statement: %s", phrase)
+	     echomsg $"Unparseable statement: {phrase}"
 	  endif
 	elseif argument == "yank"
           const lines: list<string> = getreg("0", 1, 1)
@@ -724,10 +734,10 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 
     # Create a fold for the newly added model response.
     if start_line <= end_line
-      Dofoldop(printf(",%dfold", end_line))
+      Dofoldop($",{end_line}fold")
       Dofoldop("foldopen")
       if start_line <= end_meta_line
-        Dofoldop(printf(",%dfold", end_meta_line))
+        Dofoldop($",{end_meta_line}fold")
         Dofoldop("foldclose")
       endif
       Dofoldop("foldopen")
@@ -747,13 +757,13 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
         if lstart == 0
           lstart = lnum
         else
-          execute printf(":%d,%dfold", lstart, lnum)
+          execute $":{lstart},{lnum}fold"
           # Open small source snippets.
           if lnum - lstart <= Getgvar("autofold_code", default_autofold_code)
              # Except for the Google internal search-script snippets.
              && (lnum - lstart != 2
                  || getline(lstart + 1) !~ '^print(google_search\.search(')
-            execute printf(":%dfoldopen", lstart)
+            execute $":{lstart}foldopen"
           endif
 	  lstart = 0
         endif
@@ -838,7 +848,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 	  endif
 	  for idx in segment.groundingChunkIndices
 	    const mychunk: dict<any> = chunks[idx].web
-	    append(baseline, printf("[%s](%s)", mychunk.title, mychunk.uri))
+	    append(baseline, $"[{mychunk.title}]({mychunk.uri})")
 	    baseline += 1
 	  endfor
 	endfor
@@ -856,14 +866,14 @@ enddef
 def HandleLLMError(curchan: channel, msg: string, ourbuf: number): void
   # Callback function for stderr from the regurge process.
   # Must be specified, otherwise vim will choke on stderr output.
-  echohl ErrorMsg | echomsg printf("%s %d %s", pluginname, ourbuf, msg)
+  echohl ErrorMsg | echomsg $"{pluginname} {ourbuf} {msg}"
 enddef
 
 def HandleRegurgeClose(ourbuf: number): void
   timer_stop(getbufvar(ourbuf, "timer_id", 0))
   setbufvar(ourbuf, '&modifiable', 1)
   echohl ErrorMsg |
-   echomsg printf("%s %d helper process died.", pluginname, ourbuf)
+   echomsg $"{pluginname} {ourbuf} helper process died."
 enddef
 
 def ResetChat(fullreset: bool): void
@@ -927,6 +937,8 @@ def VisualToBuffer(ourbuf: number): void
   # We are being called linewise, we only need to run once.
   if curline < endline
     return		# TODO Is there really no better way to handle this?
+                        # Maybe avoid using call, declare it to handle a
+			# range?  We do not want it called for each line.
   endif
   if IsWaitingForResponse(ourbuf)
     return
@@ -941,9 +953,28 @@ def VisualToBuffer(ourbuf: number): void
   setpos("'" .. endmark,   getpos("'>"))
 
   execute "buffer " .. ourbuf
-  append("$", printf("!include visual %d:'%s-'%s",
-                     last_buf, startmark, endmark))
+  append("$", $"!include visual {last_buf}:'{startmark}-'{endmark}")
   GotoInsertModeAtEnd()
+enddef
+
+def CustomWrite(line1: number, line2: number, bang: string, mods: string,
+                file: string = "")
+  if line1 != 1 || line2 != line("$")
+    execute $"{mods}silent {line1},{line2}write{bang}{file}"
+  else
+    var history: string = json_encode(BuildHistory())
+    if file != ""
+      if bang != "!" && getfsize(file) > 0
+        echohl ErrorMsg |
+         echom "Error: File exists and is not empty. Use ! to overwrite."
+      else
+        call writefile([history], file)
+      endif
+    else
+      # TODO
+      echom history
+    endif
+  endif
 enddef
 
 # Define the user command to start the chat.
