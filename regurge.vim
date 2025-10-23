@@ -50,9 +50,11 @@ vim9script
 
 const default_model: string = "gemini-flash-lite-latest"
 
-const gvarprefix: string = "regurge_"
 const pluginname: string = "Regurge"
+const lcpluginname: string = tolower(pluginname)
 const default_autofold_code: number = 8
+#const session_dir = stdpath("data") .. $"/{lcpluginname}/sessions"
+
 # The following system instructions tend to result in a minimum
 # of wasted output tokens.
 const default_systeminstruction: list<string> =<< trim HERE
@@ -80,7 +82,7 @@ const prices: dict<list<float>> = {
 const noacbuf: string = "noautocmd buffer "
 
 def Getgvar(tailname: string, defval: any): any
-  return get(g:, gvarprefix .. tailname, defval)
+  return get(g:, $"{lcpluginname}_{tailname}", defval)
 enddef
 
 const default_config: dict<any> = {
