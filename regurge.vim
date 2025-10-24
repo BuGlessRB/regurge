@@ -53,7 +53,7 @@ const default_model: string = "gemini-flash-lite-latest"
 const pluginname: string = "Regurge"
 const lcpluginname: string = tolower(pluginname)
 const default_autofold_code: number = 8
-#const session_dir = stdpath("data") .. $"/{lcpluginname}/sessions"
+const session_dir = expand($"~/.vim/sessions/{lcpluginname}")
 
 # The following system instructions tend to result in a minimum
 # of wasted output tokens.
@@ -468,7 +468,8 @@ def BuildHistory(): list<dict<any>>
   def Flushparts(newrole: string, lnum: number)
     if role != newrole && !empty(text_lines)
       if empty(history) && role == "model"	  # configfold
-	text_lines = text_lines[1 : -2]		  # Strip enclosing ```s
+	remove(text_lines, 0)			  # Strip leading ```
+	remove(text_lines, -1)			  # Strip trailing ```
       endif
       add(history, {
        "role": role, "parts": [{"text": join(text_lines, "\n")}]})
@@ -1028,7 +1029,9 @@ def CustomWrite(line1: number, line2: number, bang: string, mods: string,
     # Make this two lines, so we can do a quick-file read of the initial line
     # and scoop up all relevant meta information.
     const regurge_persona: string = b:regurge_persona
-    def WriteFile(summary: string)
+    var wfile: string = file
+
+    def WriteFile(summary: string): void
       setbufvar(ourbuf, "summary", summary)
       call writefile([
         json_encode({
@@ -1036,11 +1039,11 @@ def CustomWrite(line1: number, line2: number, bang: string, mods: string,
           "summary":         summary,
         }),
         json_encode(history),
-      ], file)
-      echo $"Saved chatsession to {file}"
+      ], wfile)
+      echo $"Saved chatsession to {wfile}"
     enddef
 
-    if file != ""
+    def PrepWriteFile(): void
       if b:summary != ""
 	WriteFile(b:summary)
       else
@@ -1054,9 +1057,50 @@ def CustomWrite(line1: number, line2: number, bang: string, mods: string,
 	SendHistory(history)
 	remove(history, -1)     # Clean it again, for saving later
       endif
+    enddef
+
+    if wfile != ""
+      PrepWriteFile()
     else
-      # TODO
-      echom history
+      if getfsize(session_dir) < 0
+	mkdir(session_dir, "p")
+      endif
+      final file_list: list<dict<any>> = []
+      for filepath in globpath(session_dir, "*", 1, 1)
+        if getfsize(filepath) > 0
+	  var entry: dict<any>
+	  try
+	    entry = json_decode(readfile(filepath, "b", 1)[0])
+	  catch /.*/
+	    continue
+	  endtry
+	  entry.filename = filepath
+	  entry.mtime = getftime(filepath)
+          add(file_list, entry)
+	endif
+      endfor
+      final menu_items: list<string> = []
+      for entry in file_list
+        const mtime_str: string = strftime("%Y-%m-%d %H:%M:%S", entry.mtime)
+	var display_name: string = entry.filename
+        if display_name[ : strlen(session_dir) ] == session_dir .. "/"
+	  display_name = display_name[strlen(session_dir) + 1 : ]
+	endif
+        add(menu_items, printf("%s (%s): %.50s",
+	                       display_name, mtime_str, entry.summary))
+      endfor
+
+      def WriteSessionCallback(popupwinid: number, sel: number)
+        if sel >= 0
+	  wfile = file_list[sel - 1].filename
+	  PrepWriteFile()
+	endif
+      enddef
+
+      popup_menu(menu_items, {
+        "title": "Select session to overwrite",
+        "callback": WriteSessionCallback,
+      })
     endif
   endif
 enddef
