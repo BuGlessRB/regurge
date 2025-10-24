@@ -66,7 +66,7 @@ const default_systeminstruction: list<string> =<< trim HERE
  preserving comments/whitespace.
  You are addressing a fellow senior developer/physicist.
  Answer in the prompt-language.
- No preamble, politeness, disclaimers.
+ No own-name-preamble, politeness, disclaimers.
 HERE
 
 const prices: dict<list<float>> = {
