@@ -79,7 +79,13 @@ const prices: dict<list<float>> = {
   "gemini-2.5-pro":           [2.50, 10.00],
 }
 
-const noacbuf: string = "noautocmd buffer "
+def SwitchBuffer(tobuf: number): void
+  execute "buffer " .. tobuf
+enddef
+
+def SwitchBufferBackground(tobuf: number): void
+  execute "noautocmd buffer " .. tobuf
+enddef
 
 def Getgvar(tailname: string, defval: any): any
   return get(g:, $"{lcpluginname}_{tailname}", defval)
@@ -149,7 +155,7 @@ def Regurge(...args: list<string>): void
       endfor
       if !foundwin
 	# Otherwise switch to this persona's buffer
-        execute "buffer " .. bufinfo.bufnr
+        SwitchBuffer(bufinfo.bufnr)
       endif
       ourbuf = bufinfo.bufnr
       break
@@ -593,11 +599,11 @@ def SendMessageToLLM(): void
 	                         : getbufinfo(type(bufnr) == v:t_string
 				             ? str2nr(bufnr) : bufnr)[0]
           if bufinfo.loaded != 0 && getbufvar(bufinfo.bufnr, "&buftype") == ""
-	    execute noacbuf .. bufinfo.bufnr
+	    SwitchBufferBackground(bufinfo.bufnr)
 	    const nstart: number = type(start) == v:t_string
 	                         ? line(start) : start
             const lines: list<string> = getline(nstart, end)
-	    execute noacbuf .. ourbuf
+	    SwitchBufferBackground(ourbuf)
             IncludeToLLM(lines, bufinfo.name, nstart)
 	    return true
 	  endif
@@ -696,7 +702,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
 
   const original_buf: number = bufnr("%")
 
-  execute noacbuf .. ourbuf
+  SwitchBufferBackground(ourbuf)
   b:partial_msg = []	      # Received whole message, so clear it.
   const resptime: string = printf(" \"ResponseTime\": %.0f ",
                             reltimefloat(reltime(b:start_time)) * 1000)
@@ -712,7 +718,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
       redraw | echohl Normal | echo ""
     endif
   else
-    execute noacbuf .. receivebuf
+    SwitchBufferBackground(receivebuf)
   endif
   setlocal modifiable
 
@@ -891,7 +897,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     endif
   endif
 
-  execute noacbuf .. original_buf
+  SwitchBufferBackground(original_buf)
   if statusupdate != ""
     # This echo will appear in the original buffer.
     echohl Normal | echo statusupdate
@@ -987,7 +993,7 @@ def VisualToBuffer(ourbuf: number): void
   setpos("'" .. startmark, getpos("'<"))
   setpos("'" .. endmark,   getpos("'>"))
 
-  execute "buffer " .. ourbuf
+  SwitchBuffer(ourbuf)
   append("$", $"!include visual {last_buf}:'{startmark}-'{endmark}")
   GotoInsertModeAtEnd()
 enddef
