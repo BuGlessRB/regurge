@@ -837,8 +837,8 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     if divertbuf == 0
       if has_key(struct_metadata, "groundingMetadata")
         const grounding: dict<any> = struct_metadata.groundingMetadata
-        if has_key(grounding, "groundingSupports")
-          const search: list<string> = grounding.webSearchQueries
+        if  has_key(grounding, "groundingSupports")
+	 && has_key(grounding, "groundingChunks")
           const chunks: list<dict<any>> = grounding.groundingChunks
           const supports: list<dict<any>> = grounding.groundingSupports
           const startoffset: number = line2byte(end_meta_line + 1)
