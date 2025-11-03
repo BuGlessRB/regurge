@@ -1109,3 +1109,110 @@ enddef
 command! -nargs=* Regurge call Regurge(<f-args>)
 # Define a shorthand alias.
 command! -nargs=* R Regurge(<f-args>)
+
+# This is a SmartSplit command that does the splits
+# at natural boundaries.
+
+def ResizeTerm(columns: number, lines: number, Done: func): void
+  const oldcolumns: number = &columns
+  const oldlines: number = &lines
+  const newcolumns: number = columns ?? oldcolumns
+  var newlines: number = lines ?? oldlines
+
+  def LogTermSize(id: number): void
+    if newcolumns != &columns
+      &columns = oldcolumns
+    endif
+    if newlines != &lines
+      &lines = oldlines
+    endif
+    Done()
+  enddef
+
+  &columns = newcolumns
+  &lines = newlines
+  # Run it through a timer, to allow the window to adjust to clipping
+  # at the screen edges.
+  # Two seconds is too small, the resize happens too late.
+  # Three seconds seems to be enough.
+  timer_start(3000, LogTermSize)
+enddef
+
+def SmartSplit(...args: list<string>): void
+  if get(g:, "SmartSplit_popupid", 0) > 0
+    echohl WarningMsg | echo "Last resize still in progress..."
+    return
+  endif
+  const prefwinwidth: number = 83
+  const minwinheight: number = 11
+  const prefwinheight: number = 68
+  const curtermcols: number =
+   float2nr((&columns + 1.0) / (prefwinwidth + 1) + 0.5)
+  g:SmartSplit_popupid = popup_create("Finding a spot", {
+    "padding":  [1, 3, 1, 3],
+    "border":  [],
+  })
+
+  def FindLargest(): void
+    # Find the largest-area window in the current tab.
+    const curtab: number = tabpagenr()
+    var winidlargest: number
+    var largestsize: number = 0
+    var largestcol: number = 0
+    for wininfo in getwininfo()
+      if wininfo.tabnr == curtab
+        const cursize: number = wininfo.width * wininfo.height
+        if cursize >= largestsize && wininfo.wincol > largestcol
+          winidlargest = wininfo.winid
+          largestsize = cursize
+          largestcol = wininfo.wincol
+        endif
+      endif
+    endfor
+    # Jump to it.
+    win_gotoid(winidlargest)
+
+    def EndGame(): void
+      if winwidth(0) + 1 < 2 * (prefwinwidth + 1)
+        # Take up top 1/3 of the screen.
+        var newwinheight: number = max([(winheight(0) - 1) / 3, minwinheight])
+
+        def TopSplit(): void
+          # Recalculate top 1/3 of the screen.
+          newwinheight = max([(winheight(0) - 1) / 3, minwinheight])
+          # Don't take more than half.
+          newwinheight = min([newwinheight, (winheight(0) - 1) / 2])
+          popup_close(g:SmartSplit_popupid)
+          execute printf(":%dsplit %s", newwinheight, join(args))
+	  g:SmartSplit_popupid = 0
+        enddef
+
+        # Resize terminal if we cannot get our minimum size split.
+        if &lines < prefwinheight
+          ResizeTerm(0, max([&lines - winheight(0) + (minwinheight + 1) * 3,
+                             &lines]), TopSplit)
+        else
+          TopSplit()
+        endif
+      else
+        popup_close(g:SmartSplit_popupid)
+        # Expand and split to the right.
+        execute printf(":rightbelow :%dvsplit %s", prefwinwidth, join(args))
+	g:SmartSplit_popupid = 0
+      endif
+    enddef
+
+    # Terminal is not split vertically.
+    if winwidth(0) + 1 < 2 * (prefwinwidth + 1)
+      # Resize terminal if we cannot get our minimum size split.
+      ResizeTerm(&columns - winwidth(0) + (prefwinwidth + 1) * 2 - 1, 0,
+       EndGame)
+    else
+      EndGame()
+    endif
+  enddef
+  ResizeTerm(curtermcols * (prefwinwidth + 1) - 1, 0, FindLargest)
+enddef
+
+# Define the user command to smartsplit.
+command! -nargs=* SS call SmartSplit(<f-args>)
