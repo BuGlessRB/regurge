@@ -147,14 +147,14 @@ def Regurge(...args: list<string>): void
       var foundwin: bool
       for win_id in win_findbuf(bufinfo.bufnr)
         if win_id2tabwin(win_id)[0] == tabpagenr()
-	  # Jump to the found window
+          # Jump to the found window
           win_gotoid(win_id)
-	  foundwin = true
-	  break
+          foundwin = true
+          break
         endif
       endfor
       if !foundwin
-	# Otherwise switch to this persona's buffer
+        # Otherwise switch to this persona's buffer
         SwitchBuffer(bufinfo.bufnr)
       endif
       ourbuf = bufinfo.bufnr
@@ -214,11 +214,11 @@ def Regurge(...args: list<string>): void
     var shortname: string = persona
     while shortname != ""
       if has_key(personas, shortname)
-	profile = personas[shortname]
-	break
+        profile = personas[shortname]
+        break
       elseif has_key(system_personas, shortname)
-	profile = system_personas[shortname]
-	break
+        profile = system_personas[shortname]
+        break
       endif
       shortname = strpart(shortname, 0, strlen(shortname) - 1)
     endwhile
@@ -241,8 +241,8 @@ def Regurge(...args: list<string>): void
       if type(value) == v:t_list
         var mylist: list<string> = value[ : ]
         add(configfold, key .. ":")
-	# Escape anything sensitive
-	mylist->map((_, v) => substitute(v, '[`\\]', '\\&', "g"))
+        # Escape anything sensitive
+        mylist->map((_, v) => substitute(v, '[`\\]', '\\&', "g"))
         mylist[0] = "`" .. mylist[0]
         mylist[-1] = mylist[-1] .. "`,"
         extend(configfold, mylist)
@@ -468,8 +468,8 @@ def BuildHistory(): list<dict<any>>
   def Flushparts(newrole: string, lnum: number)
     if role != newrole && !empty(text_lines)
       if empty(history) && role == "model"	  # configfold
-	remove(text_lines, 0)			  # Strip leading ```
-	remove(text_lines, -1)			  # Strip trailing ```
+        remove(text_lines, 0)			  # Strip leading ```
+        remove(text_lines, -1)			  # Strip trailing ```
       endif
       add(history, {
        "role": role, "parts": [{"text": join(text_lines, "\n")}]})
@@ -548,10 +548,10 @@ def SendMessageToLLM(): void
   for entry in history
     if entry.role == "user"
       for part in entry.parts
-	# This will leave empty lines sometimes which should not be a problem.
+        # This will leave empty lines sometimes which should not be a problem.
         part.text = substitute(part.text,
-	 printf('\C\v\_s+!%%%s%%(\s[^\n]*|\ze\n|$)', oredstatements),
-	        "", "g")
+         printf('\C\v\_s+!%%%s%%(\s[^\n]*|\ze\n|$)', oredstatements),
+                "", "g")
       endfor
     endif
   endfor
@@ -594,63 +594,63 @@ def SendMessageToLLM(): void
       const argument = matchlist(twowords[2], "[^\n]*")[0]
       if statement == "include"
 
-	def IncludeBuffer(bufnr: any,
-	                  start: any = 1, end: any = "$"): bool
-	  var bufinfo: dict<any> = type(bufnr) == v:t_dict ? bufnr
-	                         : getbufinfo(type(bufnr) == v:t_string
-				             ? str2nr(bufnr) : bufnr)[0]
+        def IncludeBuffer(bufnr: any,
+                          start: any = 1, end: any = "$"): bool
+          var bufinfo: dict<any> = type(bufnr) == v:t_dict ? bufnr
+                                 : getbufinfo(type(bufnr) == v:t_string
+                                 ? str2nr(bufnr) : bufnr)[0]
           if bufinfo.loaded != 0 && getbufvar(bufinfo.bufnr, "&buftype") == ""
-	    SwitchBufferBackground(bufinfo.bufnr)
-	    const nstart: number = type(start) == v:t_string
-	                         ? line(start) : start
+            SwitchBufferBackground(bufinfo.bufnr)
+            const nstart: number = type(start) == v:t_string
+                                 ? line(start) : start
             const lines: list<string> = getline(nstart, end)
-	    SwitchBufferBackground(ourbuf)
+            SwitchBufferBackground(ourbuf)
             IncludeToLLM(lines, bufinfo.name, nstart)
-	    return true
-	  endif
-	  return false
-	enddef
+            return true
+          endif
+          return false
+        enddef
 
         if argument[0] == "!"
           const stdoutlist: list<string> = systemlist(argument[1 : ])
-	  IncludeToLLM(stdoutlist, "stdout")
-	elseif argument =~ '^visual\s'
-	  const args: list<string> =
+          IncludeToLLM(stdoutlist, "stdout")
+        elseif argument =~ '^visual\s'
+          const args: list<string> =
            matchlist(argument, '\v^\S+\s+([^\s:]+):([^-\s]*)-([^-\s]*)')
-	  if args[0] != ""
-	    IncludeBuffer(args[1], args[2], args[3])
-	  else
+          if args[0] != ""
+            IncludeBuffer(args[1], args[2], args[3])
+          else
             echohl ErrorMsg |
-	     echomsg $"Unparseable statement: {phrase}"
-	  endif
-	elseif argument == "yank"
+             echomsg $"Unparseable statement: {phrase}"
+          endif
+        elseif argument == "yank"
           const lines: list<string> = getreg("0", 1, 1)
           IncludeToLLM(lines, bufname("#"), line("'["))
-	elseif argument == "buffer"
-	  # Try the previous buffer first
+        elseif argument == "buffer"
+          # Try the previous buffer first
           if !IncludeBuffer(bufnr("#"))
-	    const jumps: list<dict<any>> = getjumplist()[0]
-	    # Otherwise go from most recent to eldest buffers and pick the
-	    # first normal one we encounter
-	    for i in range(len(jumps) - 1, 0, -1)
-	      if IncludeBuffer(jumps[i].bufnr)
-		break
-	      endif
-	    endfor
-	  endif
+            const jumps: list<dict<any>> = getjumplist()[0]
+            # Otherwise go from most recent to eldest buffers and pick the
+            # first normal one we encounter
+            for i in range(len(jumps) - 1, 0, -1)
+              if IncludeBuffer(jumps[i].bufnr)
+                break
+              endif
+            endfor
+          endif
         elseif argument == "buffers"
           for bufinfo in getbufinfo({"bufloaded": 1})
             IncludeBuffer(bufinfo)
           endfor
-	elseif argument == "windows"
+        elseif argument == "windows"
           const seen_buffers: dict<number> = {}
           for bufnr in tabpagebuflist(0)
             if !has_key(seen_buffers, bufnr)
               seen_buffers[bufnr] = 1
-	      IncludeBuffer(bufnr)
+              IncludeBuffer(bufnr)
             endif
           endfor
-	elseif argument == ""
+        elseif argument == ""
           # include all files in the current tree
         else
           # include wildcard filenames
@@ -786,7 +786,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
                  || getline(lstart + 1) !~ '^print(google_search\.search(')
             execute $":{lstart}foldopen"
           endif
-	  lstart = 0
+          lstart = 0
         endif
       endif
     endwhile
@@ -839,7 +839,7 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
       if has_key(struct_metadata, "groundingMetadata")
         const grounding: dict<any> = struct_metadata.groundingMetadata
         if  has_key(grounding, "groundingSupports")
-	 && has_key(grounding, "groundingChunks")
+         && has_key(grounding, "groundingChunks")
           const chunks: list<dict<any>> = grounding.groundingChunks
           const supports: list<dict<any>> = grounding.groundingSupports
           const startoffset: number = line2byte(end_meta_line + 1)
@@ -886,10 +886,10 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
       var lnum: number = 2        # Skip the first empty line
       const lend: number = line("$")
       while lnum <= lend
-	if foldlevel(lnum) == 1
-	  lstart = lnum
-	  break
-	endif
+        if foldlevel(lnum) == 1
+          lstart = lnum
+          break
+        endif
         lnum += 1
       endwhile
       getbufvar(ourbuf, "divertdone")(join(getline(lstart, lend), "\n"))
@@ -980,7 +980,7 @@ def VisualToBuffer(ourbuf: number): void
   if curline < endline
     return		# TODO Is there really no better way to handle this?
                         # Maybe avoid using call, declare it to handle a
-			# range?  We do not want it called for each line.
+                        # range?  We do not want it called for each line.
   endif
   if IsWaitingForResponse(ourbuf)
     return
@@ -1045,17 +1045,17 @@ def CustomWrite(line1: number, line2: number, bang: string, mods: string,
 
     def PrepWriteFile(): void
       if b:summary != ""
-	WriteFile(b:summary)
+        WriteFile(b:summary)
       else
         StartRegurgeProcess(bufnr("%"))
-	b:divertbuf = CreateTempBuf()
-	b:divertdone = WriteFile
+        b:divertbuf = CreateTempBuf()
+        b:divertdone = WriteFile
         add(history, {
          "role": "user", "parts":
-	   [{"text": "Provide one-line topic of this session."}]
-	})
-	SendHistory(history)
-	remove(history, -1)     # Clean it again, for saving later
+           [{"text": "Provide one-line topic of this session."}]
+        })
+        SendHistory(history)
+        remove(history, -1)     # Clean it again, for saving later
       endif
     enddef
 
@@ -1063,38 +1063,38 @@ def CustomWrite(line1: number, line2: number, bang: string, mods: string,
       PrepWriteFile()
     else
       if getfsize(session_dir) < 0
-	mkdir(session_dir, "p")
+        mkdir(session_dir, "p")
       endif
       final file_list: list<dict<any>> = []
       for filepath in globpath(session_dir, "*", 1, 1)
         if getfsize(filepath) > 0
-	  var entry: dict<any>
-	  try
-	    entry = json_decode(readfile(filepath, "b", 1)[0])
-	  catch /.*/
-	    continue
-	  endtry
-	  entry.filename = filepath
-	  entry.mtime = getftime(filepath)
+          var entry: dict<any>
+          try
+            entry = json_decode(readfile(filepath, "b", 1)[0])
+          catch /.*/
+            continue
+          endtry
+          entry.filename = filepath
+          entry.mtime = getftime(filepath)
           add(file_list, entry)
-	endif
+        endif
       endfor
       final menu_items: list<string> = []
       for entry in file_list
         const mtime_str: string = strftime("%Y-%m-%d %H:%M:%S", entry.mtime)
-	var display_name: string = entry.filename
+        var display_name: string = entry.filename
         if display_name[ : strlen(session_dir) ] == session_dir .. "/"
-	  display_name = display_name[strlen(session_dir) + 1 : ]
-	endif
+          display_name = display_name[strlen(session_dir) + 1 : ]
+        endif
         add(menu_items, printf("%s (%s): %.50s",
-	                       display_name, mtime_str, entry.summary))
+                               display_name, mtime_str, entry.summary))
       endfor
 
       def WriteSessionCallback(popupwinid: number, sel: number)
         if sel >= 0
-	  wfile = file_list[sel - 1].filename
-	  PrepWriteFile()
-	endif
+          wfile = file_list[sel - 1].filename
+          PrepWriteFile()
+        endif
       enddef
 
       popup_menu(menu_items, {
