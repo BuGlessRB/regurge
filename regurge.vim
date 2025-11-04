@@ -171,7 +171,6 @@ def Regurge(...args: list<string>): void
     enew
     ourbuf = bufnr("%")
     setlocal noswapfile
-    setlocal undolevels=-1
     setlocal noundofile
     setlocal wrap
     setlocal linebreak
@@ -663,6 +662,8 @@ def SendMessageToLLM(): void
   StartShowHourglass()
   # Disable buffer modifications while waiting for the LLM response.
   setlocal nomodifiable
+  b:old_undolevels = &l:undolevels
+  setlocal undolevels=-1
   SendHistory(history)
   echohl Normal | echo "Sent message to regurge..."
   setlocal nomodified
@@ -804,13 +805,6 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
     cursor(start_line, 1)
     redraw
   endif
-  if finalmsg
-    # Pressing a mere enter jumps to the end, new line, insert mode.
-    nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotoInsertModeAtEnd()<CR>
-  else
-    # Disable buffer modifications again while waiting for more LLM responses.
-    setlocal nomodifiable
-  endif
 
   var statusupdate: string
 
@@ -897,6 +891,12 @@ def HandleLLMOutput(curchan: channel, msg: string, ourbuf: number): void
       execute "bwipeout " .. receivebuf
       setbufvar(ourbuf, "divertbuf", 0)
     endif
+    # Pressing a mere enter jumps to the end, new line, insert mode.
+    nnoremap <buffer> <silent> <CR> <cmd>call <SID>GotoInsertModeAtEnd()<CR>
+    &l:undolevels = getbufvar(ourbuf, "old_undolevels")
+  else
+    # Disable buffer modifications again while waiting for more LLM responses.
+    setlocal nomodifiable
   endif
 
   SwitchBufferBackground(original_buf)
