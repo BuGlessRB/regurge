@@ -1184,7 +1184,7 @@ def SmartSplit(...args: list<string>): void
           newwinheight = min([newwinheight, (winheight(0) - 1) / 2])
           popup_close(g:SmartSplit_popupid)
           execute printf(":%dsplit %s", newwinheight, join(args))
-	  g:SmartSplit_popupid = 0
+          g:SmartSplit_popupid = 0
         enddef
 
         # Resize terminal if we cannot get our minimum size split.
@@ -1198,7 +1198,7 @@ def SmartSplit(...args: list<string>): void
         popup_close(g:SmartSplit_popupid)
         # Expand and split to the right.
         execute printf(":rightbelow :%dvsplit %s", prefwinwidth, join(args))
-	g:SmartSplit_popupid = 0
+        g:SmartSplit_popupid = 0
       endif
     enddef
 
