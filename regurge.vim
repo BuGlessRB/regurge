@@ -171,6 +171,7 @@ def Regurge(...args: list<string>): void
     enew
     ourbuf = bufnr("%")
     setlocal noswapfile
+    setlocal undolevels=-1
     setlocal noundofile
     setlocal wrap
     setlocal linebreak
